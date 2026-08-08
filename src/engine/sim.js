@@ -47,19 +47,44 @@ function countTileType(project, type) {
 }
 
 function driveLanePath(project) {
-  const tiles = Object.entries(project.floors[0]?.tiles || {}).filter(([,t]) => t === 'drive').map(([k]) => k.split(':').map(Number))
-  if (!tiles.length) return []
-  const set = new Set(tiles.map(([x,y]) => `${x}:${y}`))
-  const neigh = ([x,y]) => [[1,0],[-1,0],[0,1],[0,-1]].map(([dx,dy]) => [x+dx,y+dy]).filter(([nx,ny]) => set.has(`${nx}:${ny}`))
-  const start = tiles.find(t => neigh(t).length <= 1) || tiles[0]
-  const out = []; const seen = new Set(); let cur = start; let prev = null
-  while (cur) {
-    const ck = `${cur[0]}:${cur[1]}`; if (seen.has(ck)) break
-    seen.add(ck); out.push({x:cur[0],y:cur[1],floor:0})
-    const next = neigh(cur).find(([nx,ny]) => `${nx}:${ny}` !== prev && !seen.has(`${nx}:${ny}`))
-    prev = ck; cur = next || null
+  const floor = project.floors[0] || {tiles:{},objects:[]}
+  const drive = Object.entries(floor.tiles).filter(([,t]) => t === 'drive').map(([k]) => {
+    const [x,y]=k.split(':').map(Number); return {x,y,floor:0}
+  })
+  if (!drive.length) return []
+  const set = new Set(drive.map(p=>`${p.x}:${p.y}`))
+  const neighbors = (p) => [[1,0],[-1,0],[0,1],[0,-1]].map(([dx,dy])=>({x:p.x+dx,y:p.y+dy,floor:0})).filter(n=>set.has(`${n.x}:${n.y}`))
+  const bfs = (a,b) => {
+    if(!a||!b)return []
+    const q=[a], came=new Map([[`${a.x}:${a.y}`,null]])
+    for(let i=0;i<q.length;i++){
+      const cur=q[i], ck=`${cur.x}:${cur.y}`
+      if(ck===`${b.x}:${b.y}`)break
+      for(const n of neighbors(cur)){
+        const nk=`${n.x}:${n.y}`; if(came.has(nk))continue
+        came.set(nk,cur); q.push(n)
+      }
+    }
+    const bk=`${b.x}:${b.y}`; if(!came.has(bk))return []
+    const out=[]; let cur=b
+    while(cur){out.push(cur);cur=came.get(`${cur.x}:${cur.y}`)}
+    return out.reverse()
   }
-  return out
+  const nearestDrive = (obj) => obj ? drive.reduce((best,p)=>{
+    const d=Math.abs(p.x-obj.x)+Math.abs(p.y-obj.y); return !best||d<best.d?{p,d}:best
+  },null)?.p : null
+  const xs=drive.map(p=>p.x), ys=drive.map(p=>p.y); const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys)
+  const border = drive.filter(p => p.x===minX || p.y===minY || p.x===maxX || p.y===maxY)
+  const order = nearestDrive(floor.objects.find(o=>o.type==='driveOrder')) || drive[0]
+  const pickup = nearestDrive(floor.objects.find(o=>o.type==='drivePickup')) || order
+  const start = (border.length?border:drive).reduce((best,p)=>{
+    const d=Math.abs(p.x-order.x)+Math.abs(p.y-order.y); return !best||d>best.d?{p,d}:best
+  },null).p
+  const end = (border.length?border:drive).reduce((best,p)=>{
+    const d=Math.abs(p.x-pickup.x)+Math.abs(p.y-pickup.y); return !best||d>best.d?{p,d}:best
+  },null).p
+  const a=bfs(start,order), b=bfs(order,pickup), c=bfs(pickup,end)
+  return [...a,...b.slice(1),...c.slice(1)]
 }
 
 function countCrossings(project) {
@@ -80,7 +105,7 @@ export function validateProject(project, brief) {
   const missing = brief.required.filter((r) => !present.has(r))
   const hasFloor = project.floors.some((f) => Object.values(f.tiles).some((t) => ['interior','patio','path'].includes(t)))
   if (!hasFloor) missing.unshift('buildable floor')
-  if (brief.id === 'drive' && countTileType(project, 'drive') < 8) missing.push('8+ drive-lane tiles')
+  if (brief.id === 'drive' && countTileType(project, 'drive') < 32) missing.push('32+ drive-lane cells')
   return { missing, ready: missing.length === 0 }
 }
 
@@ -195,7 +220,7 @@ export function runSimulation(project, brief, seed = 42, weather = 'clear') {
   let vehicleOverflow = 0
   let vehicleWait = 0
   if (brief.id === 'drive' && driveOrders.length && drivePickups.length) {
-    const stackingCapacity = Math.max(1, Math.floor(driveTiles / 3))
+    const stackingCapacity = Math.max(1, Math.floor(driveTiles / 12))
     vehicleOverflow = Math.max(0, vehicleArrivals - stackingCapacity * 8)
     vehicleServed = Math.max(0, vehicleArrivals - Math.ceil(vehicleOverflow * 0.65))
     vehicleWait = 3.2 + Math.max(0, 8 - stackingCapacity) * 0.34 + crossings * 0.28
@@ -203,24 +228,26 @@ export function runSimulation(project, brief, seed = 42, weather = 'clear') {
   }
 
   const entranceCongestion = entrances.reduce((sum, e) => sum + (congestion[key(e.x,e.y,e.floor)] || 0), 0)
-  const avgRoute = average(routeLengths)
-  const staffDistance = average(staffTrips)
+  const cellMeters = brief.cellMeters || 1
+  const avgRoute = average(routeLengths) * cellMeters
+  const staffDistance = average(staffTrips) * cellMeters
   const seats = tables.length * 4
   const seatUtil = seats ? Math.min(1, seated / Math.max(1, seats * 3)) : 0
   const throughput = Math.round((served / Math.max(1, arrivals)) * 100)
   const avgWait = Math.max(0.8, 2.4 + registerLoad / 38 + entranceCongestion / 90 + staffDistance / 30)
-  const area = project.floors.reduce((sum, floor) => sum + Object.values(floor.tiles).filter((t) => ['interior','patio'].includes(t)).length, 0)
-  const buildCost = Math.round(area * 15500 + allObjects(project).length * 1800 + countTileType(project,'drive') * 2300)
-  const windowRatio = windows.length / Math.max(1, area / 8)
+  const areaCells = project.floors.reduce((sum, floor) => sum + Object.values(floor.tiles).filter((t) => ['interior','patio'].includes(t)).length, 0)
+  const area = areaCells * cellMeters * cellMeters
+  const buildCost = Math.round(area * 3900 + allObjects(project).length * 1800 + countTileType(project,'drive') * cellMeters * cellMeters * 575)
+  const windowRatio = windows.length / Math.max(1, area / 12)
   const daylightScore = Math.round(Math.min(100, 42 + windowRatio * 34 + countTileType(project,'patio') * 1.5))
-  const routeDirectness = Math.max(0, Math.round(100 - Math.max(0, avgRoute - 18) * 2.1))
+  const routeDirectness = Math.max(0, Math.round(100 - Math.max(0, avgRoute - 16) * 2.1))
 
   const findings = []
   if (!validation.ready) findings.push({ severity: 'critical', title: 'Brief incomplete', text: `Missing: ${validation.missing.join(', ')}.` })
   if (entranceCongestion > 35) findings.push({ severity: 'warning', title: 'Entrance pressure', text: 'The ordering queue overlaps the arrival zone. Move the register deeper into the plan or create more approach space.' })
   else findings.push({ severity: 'good', title: 'Clear arrival', text: 'Customers can enter without immediately colliding with the main queue.' })
-  if (staffDistance > 14) findings.push({ severity: 'warning', title: 'Long staff loop', text: `Prep-to-service travel averages ${staffDistance.toFixed(1)} tiles. Bringing prep, register and pickup closer should improve service.` })
-  else if (staffTrips.length) findings.push({ severity: 'good', title: 'Compact service core', text: `Prep-to-service travel averages ${staffDistance.toFixed(1)} tiles.` })
+  if (staffDistance > 14) findings.push({ severity: 'warning', title: 'Long staff loop', text: `Prep-to-service travel averages ${staffDistance.toFixed(1)} m. Bringing prep, register and pickup closer should improve service.` })
+  else if (staffTrips.length) findings.push({ severity: 'good', title: 'Compact service core', text: `Prep-to-service travel averages ${staffDistance.toFixed(1)} m.` })
   if (dineIn > 0 && seated / dineIn < 0.82) findings.push({ severity: 'warning', title: 'Seat pressure', text: `${Math.round((1-seated/Math.max(1,dineIn))*100)}% of dine-in demand could not reach or secure a table.` })
   else if (tables.length) findings.push({ severity: 'good', title: 'Seating works', text: 'The seating supply and routes absorb the current demand profile.' })
   if (daylightScore < 58) findings.push({ severity: 'info', title: 'Dim interior', text: 'Few seats benefit from windows or outdoor exposure. Add glazing or pull seating toward the perimeter.' })

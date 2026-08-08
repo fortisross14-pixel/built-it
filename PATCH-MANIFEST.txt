@@ -1,23 +1,49 @@
-BUILT POC v0.2.1 PATCH
+BUILT POC v0.3.0 PATCH
 
-Fixes:
-- Fixes the collapsed/invisible building canvas in Chrome on desktop and mobile.
-- Gives the lot/SVG explicit rendered dimensions instead of relying on a circular percentage sizing rule.
-- Changes the canvas scroll container away from centered flex sizing so the drawing surface remains reachable when it is larger than the viewport.
-- Prevents parcel title text from collapsing into a narrow vertical column.
-- Makes the empty-site construction grid slightly more visible.
-- Adds pointer-cancel handling for touch/pointer painting.
-- Adds regression tests for canvas sizing.
-- Updates displayed/package version to 0.2.1.
+Apply over v0.2.1 by copying these files into the matching repo paths.
 
-Files:
-- package.json
-- src/App.jsx
-- src/styles.css
-- tests/ui-contract.test.js
+CORE EDITOR
+- Higher-resolution grids: coffee shop 36x28 (~0.75 m/cell), drive-through 48x32 (~0.8 m/cell).
+- Wall Line: drag from start point to end point; axis snaps automatically.
+- Room Shell: drag a rectangle to create a closed four-wall room quickly.
+- Floor Fill: tap inside a closed wall loop. The game refuses to fill an open enclosure.
+- Site areas (path, patio, drive lane, parking): drag opposite corners instead of painting cell-by-cell.
+- Furniture/decor remains single-tap placement.
+- Furniture now has real visual/route footprints. A four-seat table occupies 5x4 cells: 3x2 table core plus chair/clearance space.
 
-Validation:
-- npm test: 8/8 passing.
+MATERIALS / VISUAL DETAIL
+- Wall materials: Plaster, Brick, Timber with three variants each.
+- Interior floor materials: Terrazzo, Tile, Timber with variants.
+- Patio: Pavers / Deck.
+- Path: Concrete / Pavers / Gravel.
+- Drive and parking materials also have variants.
+- Plan view renders procedural texture/pattern differences without requiring an asset pack.
+- Material choice is stored per placed floor cell / wall segment and carries into isometric rendering.
 
-Apply:
-Copy these files over the matching paths in the existing BUILT repository, then commit/push/deploy normally.
+VIEWS
+- Plan: precision editor and simulation/heatmap view.
+- Section: vertical/cutaway reasoning view.
+- Isometric: generated from the same plan data.
+- Isometric can show Exterior, Floor 1, or Floor 2.
+- Exterior mode stacks floors and renders wall/floor materials plus simplified furniture/decor.
+
+TOUCH / MOBILE LANDSCAPE
+- Replaced the permanently wide build menu with a 68px left tool rail.
+- Build button opens a temporary drawer with Architecture / Furniture / Decoration / Site tabs.
+- Brief/results panel is now a closable right drawer instead of permanently consuming canvas width.
+- Compact landscape breakpoints for short phone/tablet screens.
+- Pointer capture and touch-action handling for drag construction.
+
+SITE SCALE
+- Added a visual road reference below the parcel showing two 4-cell traffic lanes and 2-cell sidewalks.
+- Drive-through starter uses a real four-cell-wide lane.
+
+SIMULATION
+- Route distance now respects the smaller physical cell size and is reported in meters.
+- Larger furniture footprints obstruct circulation except for their interaction/access cell.
+- Drive-through lane capacity is recalibrated for four-cell-wide lanes.
+
+TESTS
+- npm test: 15/15 passing.
+- Added tests for wall-line gestures, room closure, flood-fill rejection on open rooms, boundary rooms, area dragging, view contracts, touch UI, grid resolution, and furniture footprints.
+- JSX/JS syntax also validated with TypeScript parser.
