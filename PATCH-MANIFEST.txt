@@ -1,0 +1,23 @@
+BUILT POC v0.2.1 PATCH
+
+Fixes:
+- Fixes the collapsed/invisible building canvas in Chrome on desktop and mobile.
+- Gives the lot/SVG explicit rendered dimensions instead of relying on a circular percentage sizing rule.
+- Changes the canvas scroll container away from centered flex sizing so the drawing surface remains reachable when it is larger than the viewport.
+- Prevents parcel title text from collapsing into a narrow vertical column.
+- Makes the empty-site construction grid slightly more visible.
+- Adds pointer-cancel handling for touch/pointer painting.
+- Adds regression tests for canvas sizing.
+- Updates displayed/package version to 0.2.1.
+
+Files:
+- package.json
+- src/App.jsx
+- src/styles.css
+- tests/ui-contract.test.js
+
+Validation:
+- npm test: 8/8 passing.
+
+Apply:
+Copy these files over the matching paths in the existing BUILT repository, then commit/push/deploy normally.

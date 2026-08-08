@@ -83,7 +83,7 @@ function HomeScreen({ portfolio, onOpen, onReopen }) {
     <header className="brand-header">
       <div className="brand-mark">B</div>
       <div>
-        <div className="eyebrow">ARCHITECTURE SANDBOX / POC 0.2</div>
+        <div className="eyebrow">ARCHITECTURE SANDBOX / POC 0.2.1</div>
         <h1>BUILT</h1>
         <p>Make a place. Open the doors. See what your decisions do.</p>
       </div>
@@ -326,11 +326,11 @@ function SiteCanvas({project,brief,activeFloor,mode,tool,commit,selected,setSele
   const maxHeat = heat ? Math.max(1,...Object.entries(heat).filter(([k])=>k.startsWith(`${activeFloor}:`)).map(([,v])=>v)) : 1
   const width=brief.size.cols*CELL, height=brief.size.rows*CELL
 
-  return <div className="site-frame" onPointerUp={stopDrag} onPointerLeave={stopDrag}>
+  return <div className="site-frame" style={{width, height}} onPointerUp={stopDrag} onPointerCancel={stopDrag} onPointerLeave={stopDrag}>
     <div className="site-title-row"><span>{brief.lot}</span><span>Floor {activeFloor+1}</span></div>
-    <svg ref={svgRef} className="site-svg" viewBox={`0 0 ${width} ${height}`}>
+    <svg ref={svgRef} className="site-svg" width={width} height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMinYMin meet">
       <defs>
-        <pattern id="minorGrid" width={CELL} height={CELL} patternUnits="userSpaceOnUse"><path d={`M ${CELL} 0 L 0 0 0 ${CELL}`} fill="none" stroke="#cbd0ca" strokeWidth="0.65"/></pattern>
+        <pattern id="minorGrid" width={CELL} height={CELL} patternUnits="userSpaceOnUse"><path d={`M ${CELL} 0 L 0 0 0 ${CELL}`} fill="none" stroke="#b9c1ba" strokeWidth="0.85"/></pattern>
         <filter id="agentShadow"><feDropShadow dx="0" dy="2" stdDeviation="1.2" floodOpacity=".22"/></filter>
       </defs>
       <rect x="0" y="0" width={width} height={height} className="lot-bg"/>
