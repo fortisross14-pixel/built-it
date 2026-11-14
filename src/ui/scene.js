@@ -2,7 +2,7 @@
 // roofs, furniture and a little bit of street context.
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
-import { ITEMS, LEVEL_HEIGHT, MATERIALS, itemSize } from '../game/catalog.js'
+import { ITEMS, LEVEL_HEIGHT, MATERIALS, PAINTS, itemSize } from '../game/catalog.js'
 import { cellOwners, ck, wallEdges } from '../engine/plan.js'
 
 const WALL_T = 0.2
@@ -43,10 +43,38 @@ function tree(b, x, z, y0, scale = 1, tint = '#7f9f6a') {
 }
 
 // Low-poly furniture. (x, z) = footprint origin, (w, d) = footprint size in metres.
-function furniture(b, type, x, z, w, d, y0) {
+const QUALITY_LOOK = [
+  { wood: '#cbc3b4', fabric: '#9aa0a4', steel: '#b4b8ba', white: '#e6e4de' },
+  { wood: '#b58a60', fabric: '#6f8a9a', steel: '#a9b0b4', white: '#f2f1ec' },
+  { wood: '#6e4a31', fabric: '#8e3b4f', steel: '#c9a55a', white: '#fbfaf6' },
+]
+const glow = () => mat('#fff6df', { emissive: '#ffd894', emissiveIntensity: 0.9 })
+
+function furniture(b, type, x, z, w, d, y0, quality = 1) {
   const cx = x + w / 2, cz = z + d / 2
-  const wood = mat('#b58a60'), dark = mat('#4b4f52'), white = mat('#f2f1ec'), steel = mat('#a9b0b4'), fabric = mat('#6f8a9a')
+  const look = QUALITY_LOOK[quality] || QUALITY_LOOK[1]
+  const wood = mat(look.wood), dark = mat('#4b4f52'), white = mat(look.white), steel = mat(look.steel), fabric = mat(look.fabric)
+  const ceil = y0 + WALL_H
   switch (type) {
+    case 'downlight': b.box(dark, cx, ceil - 0.03, cz, 0.3, 0.06, 0.3); b.box(glow(), cx, ceil - 0.07, cz, 0.2, 0.02, 0.2); break
+    case 'pendant': {
+      b.box(dark, cx, ceil - 0.45, cz, 0.02, 0.9, 0.02)
+      const g = new THREE.ConeGeometry(0.28, 0.3, 8, 1, true); g.translate(cx, ceil - 1.0, cz); b.add(quality === 2 ? mat('#c9a55a') : dark, g)
+      b.box(glow(), cx, ceil - 1.12, cz, 0.14, 0.08, 0.14); break
+    }
+    case 'track': {
+      const along = w >= d
+      b.box(dark, cx, ceil - 0.04, cz, along ? w - 0.2 : 0.06, 0.05, along ? 0.06 : d - 0.2)
+      for (const u of [0.2, 0.5, 0.8]) { const px = along ? x + u * w : cx, pz = along ? cz : z + u * d; b.box(dark, px, ceil - 0.18, pz, 0.12, 0.2, 0.12); b.box(glow(), px, ceil - 0.29, pz, 0.08, 0.02, 0.08) }
+      break
+    }
+    case 'panel': b.box(steel, cx, ceil - 0.03, cz, w - 0.6, 0.05, d - 0.6); b.box(glow(), cx, ceil - 0.06, cz, w - 0.7, 0.02, d - 0.7); break
+    case 'chandelier': {
+      b.box(dark, cx, ceil - 0.35, cz, 0.03, 0.7, 0.03)
+      const ring = new THREE.TorusGeometry(0.55, 0.04, 4, 12); ring.rotateX(Math.PI / 2); ring.translate(cx, ceil - 0.8, cz); b.add(mat('#c9a55a'), ring)
+      for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; b.box(glow(), cx + Math.cos(a) * 0.55, ceil - 0.7, cz + Math.sin(a) * 0.55, 0.07, 0.14, 0.07) }
+      break
+    }
     case 'table': case 'bigTable': {
       b.box(wood, cx, y0 + 0.74, cz, w - 0.7, 0.06, d - 0.7)
       b.box(dark, cx, y0 + 0.37, cz, 0.12, 0.72, 0.12)
@@ -140,7 +168,11 @@ export function buildModel(project, { cutLevel = null, context = true } = {}) {
   const facadeMat = MATERIALS[project.facade] || MATERIALS.stucco
   const glazed = !!facadeMat.glazed
   const facade = mat(facadeMat.color)
-  const inner = mat('#f3f1ec')
+  const paintOf = (room) => {
+    const c = new THREE.Color((PAINTS[room?.wall] || PAINTS.chalk).color)
+    if ((room?.wallQ ?? 1) === 0) c.lerp(new THREE.Color('#a9a69e'), 0.22)
+    return mat('#' + c.getHexString(), (room?.wallQ ?? 1) === 2 ? { roughness: 0.55 } : {})
+  }
   const glass = mat('#9cc7da', { transparent: true, opacity: 0.55, roughness: 0.15 })
   const frame = mat('#3b4248')
   const top = cutLevel === null ? project.levels.length - 1 : cutLevel
@@ -182,12 +214,20 @@ export function buildModel(project, { cutLevel = null, context = true } = {}) {
     }
     // walls
     const doors = new Set(level.doors), windows = new Set(level.windows)
+    const byId = new Map(level.rooms.map(r => [r.id, r]))
     for (const e of wallEdges(level).values()) {
-      const m = e.exterior ? facade : inner
       const cx = (e.x1 + e.x2) / 2, cz = (e.y1 + e.y2) / 2
-      const sx = e.horiz ? 1 + WALL_T * 0.02 : WALL_T, sz = e.horiz ? WALL_T : 1 + WALL_T * 0.02
       const base = y0 + 0.2
-      const seg = (from, to, mm = m) => { if (to > from) b.box(mm, cx, base + (from + to) / 2, cz, sx, to - from, sz) }
+      // Each wall is two half-thickness skins: room A's paint on its side, room B's paint (or the facade) on the other.
+      const half = WALL_T / 2
+      const sideA = paintOf(byId.get(e.a)), sideB = e.exterior ? facade : paintOf(byId.get(e.b))
+      const seg = (from, to) => {
+        if (to <= from) return
+        for (const [mm, sgn] of [[sideA, -1], [sideB, 1]]) {
+          const ox = e.nx * sgn * half / 2, oz = e.ny * sgn * half / 2
+          b.box(mm, cx + ox, base + (from + to) / 2, cz + oz, e.horiz ? 1 + WALL_T * 0.02 : half, to - from, e.horiz ? half : 1 + WALL_T * 0.02)
+        }
+      }
       if (doors.has(e.key)) {
         if (wallH > 2.2) seg(2.2, wallH)
         if (e.exterior) b.box(frame, cx, base + 1.1, cz, e.horiz ? 0.9 : 0.05, 2.2, e.horiz ? 0.05 : 0.9)
@@ -223,7 +263,7 @@ export function buildModel(project, { cutLevel = null, context = true } = {}) {
     // furniture
     for (const it of level.items) {
       const s = itemSize(it)
-      furniture(b, it.type, it.x, it.y, s.w, s.h, y0 + (ITEMS[it.type].site ? 0 : 0.2))
+      furniture(b, it.type, it.x, it.y, s.w, s.h, y0 + (ITEMS[it.type].site ? 0 : 0.2), it.q ?? 1)
     }
   }
   b.flush(group)
@@ -234,9 +274,21 @@ export function disposeGroup(group) {
   group.traverse(o => { if (o.geometry) o.geometry.dispose() })
 }
 
-export function setupLights(scene, project) {
-  scene.add(new THREE.HemisphereLight('#f4f7fb', '#b2aa95', 1.5))
-  const sun = new THREE.DirectionalLight('#fff4e2', 2.2)
+export function setupLights(scene, project, night = false, cutLevel = null) {
+  scene.add(new THREE.HemisphereLight(night ? '#5a6b8c' : '#f4f7fb', night ? '#2a2620' : '#b2aa95', night ? 0.55 : 1.5))
+  const sun = new THREE.DirectionalLight(night ? '#9fb4d8' : '#fff4e2', night ? 0.35 : 2.2)
+  if (night) {
+    // Real point lights for the brightest fixtures (capped for performance).
+    const top = cutLevel ?? project.levels.length - 1
+    const fixtures = project.levels.flatMap((l, li) => li > top ? [] : l.items.filter(it => ITEMS[it.type].ceiling).map(it => ({ it, li })))
+      .sort((a, b) => ITEMS[b.it.type].light - ITEMS[a.it.type].light).slice(0, 14)
+    for (const { it, li } of fixtures) {
+      const s = itemSize(it)
+      const pl = new THREE.PointLight('#ffd49a', 5 + ITEMS[it.type].light * 0.4, 9, 1.4)
+      pl.position.set(it.x + s.w / 2, li * LEVEL_HEIGHT + 2.4, it.y + s.h / 2)
+      scene.add(pl)
+    }
+  }
   const span = Math.max(project.lot.w, project.lot.h) + 20
   sun.position.set(project.lot.w / 2 - span * 0.6, span * 1.1, project.lot.h / 2 + span * 0.35)
   sun.target.position.set(project.lot.w / 2, 0, project.lot.h / 2)

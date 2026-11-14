@@ -136,7 +136,7 @@ export function completeCommission(meta, career, result, thumb) {
   const strike = result.overall < 50
   const entry = {
     briefId: offer.briefId, client: offer.client, offer,
-    scores: { functionality: result.functionality, requirements: result.requirements, aesthetics: result.aesthetics, overall: result.overall },
+    scores: { functionality: result.functionality, requirements: result.requirements, aesthetics: result.aesthetics, budget: result.budget ?? 0, overall: result.overall },
     stars: result.stars, rep: gain, strike, thumb, project, cost: result.cost.total, date: Date.now(),
   }
   const next = {

@@ -1,7 +1,7 @@
 // Plan model: rooms are axis-aligned rectangles on a 1 m grid, per level.
 // Walls are derived from room perimeters; doors and windows live on wall edges.
 // Edge keys: "h:x:y" = top edge of cell (x,y); "v:x:y" = left edge of cell (x,y).
-import { BASE_COST, ITEMS, MATERIALS, ROOMS, itemSize } from '../game/catalog.js'
+import { BASE_COST, ITEMS, MATERIALS, ROOMS, itemCost, itemSize, q } from '../game/catalog.js'
 
 let counter = 0
 export function uid(prefix = 'id') {
@@ -67,7 +67,7 @@ export function addRoom(project, li, rect, type, floor = 'vinyl') {
   if (!check.ok) return { project, error: check.error }
   const p = clone(project)
   const wet = ROOMS[type]?.wet
-  const room = { id: uid('r'), type, floor: wet && !MATERIALS[floor]?.wetSafe ? 'ceramic' : floor, ...rect }
+  const room = { id: uid('r'), type, floor: wet && !MATERIALS[floor]?.wetSafe ? 'ceramic' : floor, floorQ: 1, wall: 'chalk', wallQ: 1, ...rect }
   p.levels[li].rooms.push(room)
   return { project: cleanup(p), room }
 }
@@ -182,10 +182,11 @@ export function canPlaceItem(project, li, item, ignoreId = null) {
       return { ok: false, error: `${def.label} belongs in: ${def.rooms.map(t => ROOMS[t].label).join(', ')}.` }
     }
   }
-  if (!def.overlay) {
+  if (!def.overlay || def.ceiling) {
     const taken = new Set()
     for (const it of level.items) {
-      if (it.id === ignoreId || ITEMS[it.type].overlay) continue
+      if (it.id === ignoreId) continue
+      if (def.ceiling ? !ITEMS[it.type].ceiling : ITEMS[it.type].overlay) continue
       for (const c of itemCells(it)) taken.add(ck(c.x, c.y))
     }
     if (cells.some(c => taken.has(ck(c.x, c.y)))) return { ok: false, error: 'Something is already there.' }
@@ -197,7 +198,7 @@ export function placeItem(project, li, item) {
   const check = canPlaceItem(project, li, item)
   if (!check.ok) return { project, error: check.error }
   const p = clone(project)
-  const placed = { id: uid('i'), rot: 0, ...item }
+  const placed = { id: uid('i'), rot: 0, q: 1, ...item }
   p.levels[li].items.push(placed)
   return { project: p, item: placed }
 }
@@ -289,18 +290,20 @@ export function verticalLinks(project, li) {
 }
 
 export function projectCost(project, kit = []) {
-  let shell = 0, finishes = 0, items = 0, openings = 0, facade = 0
+  let shell = 0, finishes = 0, items = 0, openings = 0, facade = 0, paint = 0
   const facadeRate = MATERIALS[project.facade]?.cost || 260
   project.levels.forEach((level, li) => {
     const premium = 1 + li * BASE_COST.levelPremium
     for (const r of level.rooms) {
       shell += roomArea(r) * BASE_COST.perM2 * premium
-      finishes += roomArea(r) * (MATERIALS[r.floor]?.cost || 40)
+      finishes += roomArea(r) * (MATERIALS[r.floor]?.cost || 40) * q(r.floorQ).cost
+      paint += 2 * (r.w + r.h) * 3 * BASE_COST.paint * q(r.wallQ).cost
     }
-    for (const it of level.items) items += ITEMS[it.type].cost
+    for (const it of level.items) items += itemCost(it)
     openings += level.doors.length * BASE_COST.door + level.windows.length * BASE_COST.window
     for (const e of wallEdges(level).values()) if (e.exterior) facade += facadeRate
   })
+  finishes += paint
   let total = shell + finishes + items + openings + facade
   if (kit.includes('contractor')) total *= 0.88
   return { total: Math.round(total), shell: Math.round(shell), finishes: Math.round(finishes), items, openings, facade: Math.round(facade) }

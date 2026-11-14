@@ -370,6 +370,9 @@ export function ItemSymbol({ type, w, h }) {
     }
     case 'plant': return <g><circle cx={w / 2} cy={h / 2} r={0.36} className="sym-tree" /><circle cx={w / 2} cy={h / 2} r={0.12} className="sym" /></g>
     case 'shelving': case 'lockers': return <g>{box}{Array.from({ length: Math.round(Math.max(w, h)) * 2 - 1 }, (_, k) => w >= h ? <line key={k} x1={(k + 1) * 0.5} y1={i} x2={(k + 1) * 0.5} y2={h - i} className="sym-line" /> : <line key={k} y1={(k + 1) * 0.5} x1={i} y2={(k + 1) * 0.5} x2={w - i} className="sym-line" />)}</g>
+    case 'downlight': case 'pendant': return <g><circle cx={w / 2} cy={h / 2} r={0.22} className="sym-light" /><path d={`M${w / 2 - 0.3} ${h / 2} h0.6 M${w / 2} ${h / 2 - 0.3} v0.6`} className="sym-light" /></g>
+    case 'chandelier': return <g><circle cx={w / 2} cy={h / 2} r={0.7} className="sym-light" /><circle cx={w / 2} cy={h / 2} r={0.25} className="sym-light" /></g>
+    case 'track': case 'panel': return <g><rect x={0.15} y={0.15} width={w - 0.3} height={h - 0.3} className="sym-light" />{[0.25, 0.5, 0.75].map(u => <circle key={u} cx={w >= h ? u * w : w / 2} cy={w >= h ? h / 2 : u * h} r={0.1} className="sym-light" />)}</g>
     case 'skylight': return <g><rect x={0.1} y={0.1} width={w - 0.2} height={h - 0.2} className="sym-dash" /><path d={`M0.1 0.1 L${w - 0.1} ${h - 0.1} M${w - 0.1} 0.1 L0.1 ${h - 0.1}`} className="sym-dash" /></g>
     case 'pool': return <g>{box}<rect x={0.3} y={0.3} width={w - 0.6} height={h - 0.6} className="sym water" /></g>
     case 'artwork': case 'sculpture': return <g>{box}<circle cx={w / 2} cy={h / 2} r={0.22} className="sym fill-accent" /></g>

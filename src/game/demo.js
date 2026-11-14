@@ -25,5 +25,10 @@ export function referenceCafe(offer = cafeOffer()) {
   item('table', 3, 3); item('table', 6, 3); item('table', 3, 6); item('table', 6, 6)
   item('oven', 10, 7); item('sink', 13, 7); item('toilet', 15, 4)
   item('tree', 1, 10); item('tree', 4, 10); item('bench', 6, 10); item('plant', 9, 2)
+  // Decorate layer: paint and ceiling lights
+  p.levels[0].rooms.forEach(r => { r.wall = r.type === 'seating' ? 'terracotta' : 'chalk' })
+  item('pendant', 4, 4); item('pendant', 7, 4); item('pendant', 4, 7); item('pendant', 7, 7)
+  item('downlight', 3, 2); item('downlight', 8, 2); item('downlight', 5, 5)
+  item('track', 11, 2); item('panel', 11, 5); item('downlight', 14, 3)
   return p
 }

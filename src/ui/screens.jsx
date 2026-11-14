@@ -232,7 +232,7 @@ export function Review({ entry, review, reward, onPick, onContinue }) {
           </div>
         </div>
         <div className="score-bars">
-          {[['Functionality', s.functionality], ['Requirements', s.requirements], ['Aesthetics', s.aesthetics]].map(([k, v], i) => (
+          {[['Functionality', s.functionality], ['Requirements', s.requirements], ['Aesthetics', s.aesthetics], ['Budget', s.budget ?? 0]].map(([k, v], i) => (
             <div key={k} className="sbar" style={{ '--d': `${i * 0.15}s` }}>
               <span>{k}</span><div className="bar"><i style={{ width: `${v}%` }} className={v < 50 ? 'bad' : v < 70 ? 'mid' : ''} /></div><b className="mono">{v}</b>
             </div>
@@ -361,7 +361,7 @@ export function WorkModal({ work, onClose }) {
           <div><h3>{BRIEFS[work.briefId].name}</h3><p className="dim small">{work.client}</p></div>
           <div className="row"><Stars n={work.stars} /><b className="mono">{work.scores.overall}</b></div>
         </div>
-        <div className="row mono dim small"><span>F {work.scores.functionality}</span><span>R {work.scores.requirements}</span><span>A {work.scores.aesthetics}</span><span>{work.rep >= 0 ? '+' : ''}{work.rep} rep</span></div>
+        <div className="row mono dim small"><span>F {work.scores.functionality}</span><span>R {work.scores.requirements}</span><span>A {work.scores.aesthetics}</span><span>B {work.scores.budget ?? '–'}</span><span>{work.rep >= 0 ? '+' : ''}{work.rep} rep</span></div>
         <div className="row end"><button className="ghost" onClick={onClose}>Close</button></div>
       </div>
     </div>

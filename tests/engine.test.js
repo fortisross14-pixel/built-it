@@ -80,7 +80,7 @@ test('wrong style lowers aesthetics; over budget lowers requirements', () => {
   const offStyle = evaluate(referenceCafe(offer), { ...offer, styles: ['corporate', 'luxe'] })
   assert.ok(offStyle.aesthetics < base.aesthetics - 15)
   const poor = evaluate(referenceCafe(offer), { ...offer, budget: 100000 })
-  assert.ok(poor.requirements < base.requirements - 15)
+  assert.ok(poor.budget < base.budget - 40)
 })
 
 test('stairs link levels only when stacked', () => {
@@ -142,4 +142,30 @@ test('career: completing, rewards, strikes and archiving', () => {
   assert.equal(meta.legacy.length, 1)
   assert.equal(meta.careers, 1)
   assert.ok(repGain(30, offer, []) < 0)
+})
+
+test('quality is a trade-off: premium raises F and A but costs budget', () => {
+  const offer = cafeOffer()
+  const base = referenceCafe(offer)
+  const lux = structuredClone(base)
+  lux.levels[0].items.forEach(it => { it.q = 2 })
+  lux.levels[0].rooms.forEach(r => { r.floorQ = 2; r.wallQ = 2 })
+  const cheap = structuredClone(base)
+  cheap.levels[0].items.forEach(it => { it.q = 0 })
+  cheap.levels[0].rooms.forEach(r => { r.floorQ = 0; r.wallQ = 0 })
+  const [a, b, c] = [base, lux, cheap].map(p => evaluate(p, offer))
+  assert.ok(b.functionality > a.functionality && b.aesthetics > a.aesthetics)
+  assert.ok(b.cost.total > a.cost.total && b.budget < a.budget)
+  assert.ok(c.functionality < a.functionality && c.aesthetics < a.aesthetics && c.budget >= a.budget)
+})
+
+test('ceiling lights hang over furniture but not over each other; no lights = dark', () => {
+  const offer = cafeOffer()
+  let p = referenceCafe(offer)
+  const pend = p.levels[0].items.find(i => i.type === 'pendant')
+  assert.ok(!canPlaceItem(p, 0, { type: 'downlight', x: pend.x, y: pend.y, rot: 0 }).ok)
+  assert.ok(canPlaceItem(p, 0, { type: 'downlight', x: 6, y: 3, rot: 0 }).ok, 'over a table')
+  p.levels[0].items = p.levels[0].items.filter(i => !['pendant', 'downlight', 'track', 'panel'].includes(i.type))
+  const r = evaluate(p, offer)
+  assert.ok(!r.checklist.find(c => c.label === 'Ceiling lighting').ok)
 })

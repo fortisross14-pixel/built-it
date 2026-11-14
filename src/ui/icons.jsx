@@ -39,6 +39,10 @@ const P = {
   section: 'M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4',
   play: 'M7 4l13 8-13 8z',
   flag: 'M5 21V4M5 4h11l-2 4 2 4H5',
+  grid: 'M3 3h18v18H3zM3 9h18M3 15h18M9 3v18M15 3v18',
+  leaf: 'M5 19c0-9 6-14 15-14 0 9-5 15-14 15zM5 19l8-8',
+  bulb: 'M9 18h6M10 21h4M12 3a6 6 0 00-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0012 3z',
+  moon: 'M20 14.5A8 8 0 119.5 4a6.5 6.5 0 0010.5 10.5z',
 }
 
 export default function Icon({ name, size = 20, stroke = 1.8, className = '', fill = 'none' }) {

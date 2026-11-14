@@ -1,5 +1,5 @@
 // Review engine: scores a project on Functionality, Requirements and Aesthetics.
-import { ITEMS, MATERIALS, ROOMS, STYLES } from '../game/catalog.js'
+import { ITEMS, MATERIALS, PAINTS, ROOMS, STYLES, q } from '../game/catalog.js'
 import { BRIEFS, TWISTS } from '../game/briefs.js'
 import { cellOwners, ck, edgeCells, footprint, itemCells, projectCost, roomArea, verticalLinks, wallEdges } from './plan.js'
 
@@ -210,8 +210,23 @@ export function evaluate(project, offer, kit = []) {
     note('functionality', 'Vertical circulation', lift, 'Levels are properly linked by stairs and lifts.', 'Levels are not all linked: stack stairs and lifts directly above each other.')
   }
 
-  let functionality = 100 * (0.28 * reach + 0.2 * access + 0.14 * distScore + (brief.adj.length ? 0.2 : 0) * adj + 0.06 * crowd + 0.06 * wet + 0.06 * lift)
-  functionality /= (brief.adj.length ? 1 : 0.8)
+  // Ceiling lighting: each room needs enough light output for its floor area.
+  const inRoom = (it, r) => it.x >= r.x && it.x < r.x + r.w && it.y >= r.y && it.y < r.y + r.h
+  const lights = items.filter(it => ITEMS[it.type].ceiling)
+  let litArea = 0
+  project.levels.forEach((level, li) => level.rooms.forEach(r => {
+    const out = lights.filter(it => it.li === li && inRoom(it, r)).reduce((s, it) => s + ITEMS[it.type].light * (0.8 + 0.2 * (it.q ?? 1)), 0)
+    litArea += clamp(out / roomArea(r)) * roomArea(r)
+  }))
+  const lighting = totalArea ? litArea / totalArea : 0
+  checklist.push({ label: 'Ceiling lighting', ok: lighting >= 0.9, detail: `${Math.round(lighting * 100)}% lit`, kind: 'light' })
+  note('functionality', 'Lighting', lighting, 'Every room is properly lit after dark.', 'Rooms are dark after sunset: add ceiling lights in Decorate 3D.')
+
+  const equipQ = useful.length ? avg(useful.map(it => q(it.q).score)) : 0
+  note('functionality', 'Equipment quality', equipQ, 'Quality furniture and equipment that will last.', 'Cheap equipment: staff are already complaining.')
+
+  let functionality = 100 * (0.25 * reach + 0.17 * access + 0.12 * distScore + (brief.adj.length ? 0.18 : 0) * adj + 0.05 * crowd + 0.05 * wet + 0.05 * lift + 0.07 * lighting + 0.06 * equipQ)
+  functionality /= (brief.adj.length ? 1 : 0.82)
   if (!hasEntrance) functionality = Math.min(functionality, 12)
   if (kit.includes('mentor')) functionality += 5
 
@@ -242,10 +257,11 @@ export function evaluate(project, offer, kit = []) {
   note('requirements', 'Furniture & equipment', itemScore, 'All the equipment the client listed is in place.', 'Required furniture or equipment is missing.')
 
   const cost = projectCost(project, kit)
-  const over = cost.total / offer.budget - 1
-  const budget = over <= 0 ? 1 : clamp(1 - over * 2.5)
+  const costRatio = cost.total / offer.budget
+  const over = costRatio - 1
+  const budgetScore = !rooms.length ? 0 : costRatio <= 0.8 ? 1 : costRatio <= 1 ? 1 - (costRatio - 0.8) / 0.2 * 0.25 : clamp(0.75 - over * 2.5)
   checklist.push({ label: 'Within budget', ok: over <= 0, detail: `${Math.round(cost.total / 1000)}k / ${Math.round(offer.budget / 1000)}k`, kind: 'budget' })
-  note('requirements', 'Budget', budget, over <= -0.15 ? 'Came in well under budget. The client is delighted.' : 'On budget.', `${Math.round(over * 100)}% over budget.`)
+  note('budget', 'Budget', budgetScore, costRatio <= 0.85 ? 'Came in well under budget. The client is delighted.' : over <= 0 ? 'Delivered on budget.' : 'Slightly over budget, but worth it.', `${Math.round(over * 100)}% over budget. The client's accountant is furious.`)
 
   const L = project.levels.filter(l => l.rooms.length).length
   const levelsOk = L >= brief.levels.min && L <= brief.levels.max ? 1 : clamp(L / brief.levels.min)
@@ -271,7 +287,7 @@ export function evaluate(project, offer, kit = []) {
     extra.push(s)
     checklist.push({ label: 'Daylight in every lived-in room', ok: s === 1, detail: `${hab.filter(r => lit.has(r.id)).length}/${hab.length}` })
   }
-  let requirements = 100 * (0.36 * roomScore + 0.3 * itemScore + 0.24 * budget + 0.1 * levelsOk)
+  let requirements = 100 * (0.45 * roomScore + 0.4 * itemScore + 0.15 * levelsOk)
   if (extra.length) requirements = requirements * (1 - 0.12 * extra.length) + 100 * 0.12 * extra.reduce((s, v) => s + v, 0)
 
   // ---------------- Aesthetics
@@ -291,7 +307,8 @@ export function evaluate(project, offer, kit = []) {
   rooms.forEach(r => floorArea.set(r.floor, (floorArea.get(r.floor) || 0) + roomArea(r)))
   const matches = (id) => (MATERIALS[id]?.tags || []).some(t => offer.styles.includes(t))
   const floorMatch = totalArea ? [...floorArea].reduce((s, [id, a]) => s + (matches(id) ? a : 0), 0) / totalArea : 0
-  const style = rooms.length ? 0.4 * (matches(project.facade) ? 1 : 0) + 0.6 * floorMatch : 0
+  const paintMatch = totalArea ? rooms.reduce((s, r) => s + ((PAINTS[r.wall]?.tags || []).some(t => offer.styles.includes(t)) ? roomArea(r) : 0), 0) / totalArea : 0
+  const style = rooms.length ? 0.3 * (matches(project.facade) ? 1 : 0) + 0.45 * floorMatch + 0.25 * paintMatch : 0
   note('aesthetics', 'Style fit', style, `Materials nail the ${offer.styles.map(s => STYLES[s].toLowerCase()).join(' / ')} brief.`, `The client wanted something ${offer.styles.map(s => STYLES[s].toLowerCase()).join(' and ')}. Materials missed it.`)
 
   const distinct = new Set([project.facade, ...floorArea.keys()]).size
@@ -323,19 +340,27 @@ export function evaluate(project, offer, kit = []) {
   const specialBonus = Math.min(15, [...specials].reduce((s, [t, n]) => s + ITEMS[t].special * (n === 1 ? 1 : 1.4), 0))
   if (specialBonus) notes.push({ group: 'aesthetics', label: 'Signature pieces', value: 1, text: `Signature pieces add flair (+${Math.round(specialBonus)}).` })
 
+  const roomQ = totalArea ? rooms.reduce((s, r) => s + (q(r.floorQ).score + q(r.wallQ).score) / 2 * roomArea(r), 0) / totalArea : 0
+  const decoItems = items.filter(it => ITEMS[it.type].layer === 'decor' || ITEMS[it.type].group === 'Furniture')
+  const finishQ = decoItems.length ? 0.65 * roomQ + 0.35 * avg(decoItems.map(it => q(it.q).score)) : roomQ
+  note('aesthetics', 'Finish quality', finishQ, 'Beautifully crafted finishes and furniture.', 'Cheap finishes show. Paint is already peeling.')
+  const mood = clamp(lights.reduce((s, it) => s + ITEMS[it.type].ambience * q(it.q).score, 0) / Math.max(1, hab.length * 1.2))
+  note('aesthetics', 'Lighting mood', mood, 'Warm, layered lighting gives it atmosphere at night.', 'Flat, office-style lighting kills the mood. Try pendants or a chandelier.')
+
   const dw = twist?.daylightWeight || 1
-  const parts = [[daylight, 0.22 * dw], [proportion, 0.1], [style, 0.24], [palette, 0.1], [decor, 0.12], [facadeScore, 0.12], [compact, 0.1]]
+  const parts = [[daylight, 0.2 * dw], [proportion, 0.08], [style, 0.2], [palette, 0.08], [decor, 0.1], [facadeScore, 0.1], [compact, 0.08], [finishQ, 0.1], [mood, 0.06]]
   let aesthetics = 100 * parts.reduce((s, [v, w]) => s + v * w, 0) / parts.reduce((s, [, w]) => s + w, 0) + specialBonus
   if (kit.includes('renders')) aesthetics += 5
 
   functionality = Math.round(clamp(functionality, 0, 100))
   requirements = Math.round(clamp(requirements, 0, 100))
   aesthetics = Math.round(clamp(aesthetics, 0, 100))
-  const w = { functionality: 1, requirements: 1, aesthetics: 1, ...(twist?.weights || {}) }
-  const overall = Math.round((functionality * w.functionality + requirements * w.requirements + aesthetics * w.aesthetics) / (w.functionality + w.requirements + w.aesthetics))
+  const budget = Math.round(100 * budgetScore)
+  const w = { functionality: 1, requirements: 1, aesthetics: 1, budget: 1, ...(twist?.weights || {}) }
+  const overall = Math.round((functionality * w.functionality + requirements * w.requirements + aesthetics * w.aesthetics + budget * w.budget) / (w.functionality + w.requirements + w.aesthetics + w.budget))
 
   return {
-    functionality, requirements, aesthetics, overall,
+    functionality, requirements, aesthetics, budget, overall,
     stars: starsFor(overall), cost, notes, checklist,
     stats: { area: totalArea, levels: L, walk: Number(walk.toFixed(1)), daylit: hab.filter(r => lit.has(r.id)).length, habitable: hab.length },
   }

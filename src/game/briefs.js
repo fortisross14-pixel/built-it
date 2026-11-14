@@ -142,7 +142,7 @@ export const BRIEFS = {
 
 // Client twists make the same building type play differently from run to run.
 export const TWISTS = {
-  tight:    { name: 'Tight budget',      text: 'Budget is 15% lower than usual.', budget: 0.85, rep: 1.2 },
+  tight:    { name: 'Tight budget',      text: 'Budget is 15% lower and the Budget rating counts double.', budget: 0.85, weights: { budget: 2 }, rep: 1.2 },
   flagship: { name: 'Flagship project',  text: 'Generous budget, but the client judges looks twice as hard.', budget: 1.3, weights: { aesthetics: 2 }, rep: 1.1 },
   daylight: { name: 'Light-obsessed',    text: 'Every lived-in room must have daylight. Daylight counts double.', daylightWeight: 2, rep: 1.1 },
   heritage: { name: 'Heritage district', text: 'Facade must be brick, timber or travertine.', facades: ['brick', 'timberClad', 'travertine'], rep: 1.25 },
@@ -163,9 +163,10 @@ export function estimateBudget(brief) {
   let shell = 0
   for (let l = 0; l < levels; l++) shell += footprint * BASE_COST.perM2 * (1 + l * BASE_COST.levelPremium)
   const facade = perimeter * levels * 380
-  const finishes = area * 110
+  const finishes = area * 110 + area * 4 * 3 * 12
+  const lighting = area / 9 * 450
   const items = brief.items.reduce((s, it) => s + ITEMS[it.type].cost * (it.count || 1), 0)
   const vertical = levels > 1 ? (ITEMS.stairs.cost + (brief.needsLift ? ITEMS.elevator.cost : 0)) * levels : 0
   const openings = Math.ceil(perimeter * levels / 3) * BASE_COST.window + brief.rooms.length * 2 * BASE_COST.door
-  return Math.round((shell + facade + finishes + items + vertical + openings) * 1.22 / 1000) * 1000
+  return Math.round((shell + facade + finishes + lighting + items + vertical + openings) * 1.22 / 1000) * 1000
 }
