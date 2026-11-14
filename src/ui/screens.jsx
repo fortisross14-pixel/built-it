@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
+import { feedback, onSettings, setSetting, settings as fxSettings } from './fx.js'
 import Icon from './icons.jsx'
 import Card from './Card.jsx'
 import View3D from './View3D.jsx'
@@ -10,8 +11,40 @@ import { STAR_LABEL } from '../engine/score.js'
 import { referenceCafe } from '../game/demo.js'
 import { money } from './format.js'
 
-export function Stars({ n, size = 16 }) {
-  return <span className="stars" aria-label={`${n} stars`}>{[1, 2, 3, 4, 5].map(i => <Icon key={i} name="star" size={size} fill={i <= n ? 'currentColor' : 'none'} className={i <= n ? 'on' : ''} />)}</span>
+export function Stars({ n, size = 16, shown = null }) {
+  return <span className={`stars ${shown !== null ? 'reveal' : ''}`} aria-label={`${n} stars`}>{[1, 2, 3, 4, 5].map(i => <Icon key={i} name="star" size={size} fill={i <= n ? 'currentColor' : 'none'} className={`${i <= n ? 'on' : ''} ${shown === null || i <= shown ? 'shown' : ''}`} />)}</span>
+}
+
+// ------------------------------------------------------------------ Settings
+export function SettingsButton() {
+  const [open, setOpen] = useState(false)
+  const [s, setS] = useState(fxSettings)
+  useEffect(() => onSettings(setS), [])
+  const rows = [
+    ['sound', 'Sound', 'Clicks, stamps and fanfares'],
+    ['haptics', 'Haptics', 'Vibration on supported phones'],
+    ['reduceMotion', 'Reduce motion', 'Calmer transitions, no camera glides'],
+  ]
+  return (
+    <>
+      <button className="icon-btn" onClick={() => { feedback('tap'); setOpen(true) }} aria-label="Settings"><Icon name="gear" /></button>
+      {open && (
+        <div className="modal-wrap" onClick={() => setOpen(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} role="dialog" aria-label="Settings">
+            <h3>Settings</h3>
+            <div className="settings-list">
+              {rows.map(([k, label, hint]) => (
+                <button key={k} className="toggle-row" role="switch" aria-checked={!!s[k]} onClick={() => { setSetting(k, !s[k]); feedback('select') }}>
+                  <span><b>{label}</b><small>{hint}</small></span><i className={`switch ${s[k] ? 'on' : ''}`} />
+                </button>
+              ))}
+            </div>
+            <div className="row end"><button className="primary" onClick={() => setOpen(false)} autoFocus>Done</button></div>
+          </div>
+        </div>
+      )}
+    </>
+  )
 }
 
 function Brand({ small }) {
@@ -32,7 +65,7 @@ export function Home({ meta, career, onContinue, onNew, onCollection, onLegacy }
         <div className="hero-fade" />
       </div>
       <div className="home-panel">
-        <Brand />
+        <div className="row between"><Brand /><SettingsButton /></div>
         <h1>Build a name.<br />One commission at a time.</h1>
         <p className="lead">You're a young architect with a drawing board and no clients. Design cafés, then clinics, then towers. Every review counts: three disasters and the studio closes. When your career ends, the next architect inherits your cards.</p>
         <div className="home-actions">
@@ -108,7 +141,7 @@ export function Hub({ career, onAccept, onResume, onHome, onRetire, onOpenWork }
       <header className="page-top">
         <button className="icon-btn" onClick={onHome}><Icon name="back" /></button>
         <Brand small />
-        <button className="ghost small" onClick={() => setConfirmRetire(true)}><Icon name="flag" size={16} /><span className="hide-xs">Retire</span></button>
+        <div className="row"><SettingsButton /><button className="ghost small" onClick={() => setConfirmRetire(true)}><Icon name="flag" size={16} /><span className="hide-xs">Retire</span></button></div>
       </header>
       <div className="page-body">
         <section className="architect">
@@ -215,18 +248,47 @@ export function Review({ entry, review, reward, onPick, onContinue }) {
   const s = entry.scores
   const praise = review?.praise || []
   const gripes = review?.gripes || []
+  // Reveal sequence: count the score up, then pop the stars one by one (game-feel: large tier).
+  const [count, setCount] = useState(fxSettings.reduceMotion ? s.overall : 0)
+  const [starsShown, setStarsShown] = useState(fxSettings.reduceMotion ? 5 : 0)
+  useEffect(() => {
+    if (fxSettings.reduceMotion) return
+    let raf, t0 = null
+    const timers = []
+    const dur = 1100
+    let lastShown = 0
+    const step = (now) => {
+      t0 ??= now
+      const k = Math.min(1, (now - t0) / dur)
+      const v = Math.round(s.overall * (1 - Math.pow(1 - k, 3)))
+      if (v !== lastShown && v % 3 === 0) feedback('tick')
+      lastShown = v
+      setCount(v)
+      if (k < 1) raf = requestAnimationFrame(step)
+      else {
+        for (let i = 1; i <= 5; i++) timers.push(setTimeout(() => { setStarsShown(i); if (i <= entry.stars) feedback('star', i) }, i * 130))
+        timers.push(setTimeout(() => feedback(entry.strike ? 'fail' : entry.stars >= 4 ? 'fanfare' : 'select'), 5 * 130 + 120))
+      }
+    }
+    const start = setTimeout(() => { raf = requestAnimationFrame(step) }, 450)
+    return () => { clearTimeout(start); cancelAnimationFrame(raf); timers.forEach(clearTimeout) }
+  }, []) // eslint-disable-line
+  const stampText = entry.strike ? 'REJECTED' : entry.stars >= 4 ? 'APPROVED' : 'ACCEPTED'
   return (
     <div className="page review">
       <header className="page-top"><span /><Brand small /><span /></header>
       <div className="page-body">
         <div className="review-hero">
-          {entry.thumb ? <img src={entry.thumb} alt="" className="review-img" /> : <div className="review-img placeholder" />}
+          <div className="review-img-wrap">
+            {entry.thumb ? <img src={entry.thumb} alt="" className="review-img" /> : <div className="review-img placeholder" />}
+            <span className={`stamp ${entry.strike ? 'bad' : entry.stars >= 4 ? '' : 'mid'}`}>{stampText}</span>
+          </div>
           <div className="review-head">
             <span className="mono dim">REVIEW · {entry.client.toUpperCase()}</span>
             <h2>{b.name}</h2>
             <div className="big-score">
-              <span className="num">{s.overall}</span>
-              <div><Stars n={entry.stars} size={22} /><b>{STAR_LABEL[entry.stars]}</b></div>
+              <span className="num" aria-label={`${s.overall} out of 100`}>{count}</span>
+              <div><Stars n={entry.stars} size={22} shown={starsShown} /><b>{STAR_LABEL[entry.stars]}</b></div>
             </div>
             <p className="quote">{review?.head}</p>
           </div>
@@ -257,8 +319,8 @@ export function Review({ entry, review, reward, onPick, onContinue }) {
           <section className="reward">
             <h3>The press noticed. Pick a card.</h3>
             <p className="dim small">It joins this career's kit right now and stays in your collection for every future architect.</p>
-            <div className="card-grid three">{reward.choices.map(id => <Card key={id} id={id} fresh selected={picked === id} onClick={() => setPicked(id)} />)}</div>
-            <div className="row end"><button className="primary big" disabled={!picked} onClick={() => onPick(picked)}>Take card<Icon name="chevron" size={18} /></button></div>
+            <div className="card-grid three">{reward.choices.map(id => <Card key={id} id={id} fresh selected={picked === id} onClick={() => { feedback('card'); setPicked(id) }} />)}</div>
+            <div className="row end"><button className="primary big" disabled={!picked} onClick={() => { feedback('place'); onPick(picked) }}>Take card<Icon name="chevron" size={18} /></button></div>
           </section>
         ) : (
           <div className="row end">

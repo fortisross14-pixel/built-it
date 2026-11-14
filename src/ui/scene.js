@@ -2,6 +2,7 @@
 // roofs, furniture and a little bit of street context.
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { ITEMS, LEVEL_HEIGHT, MATERIALS, PAINTS, itemSize } from '../game/catalog.js'
 import { cellOwners, ck, wallEdges } from '../engine/plan.js'
 
@@ -270,12 +271,12 @@ export function buildModel(project, { cutLevel = null, context = true } = {}) {
   return group
 }
 
-export function disposeGroup(group) {
-  group.traverse(o => { if (o.geometry) o.geometry.dispose() })
+export function disposeGroup(group, materials = false) {
+  group.traverse(o => { if (o.geometry) o.geometry.dispose(); if (materials && o.material) o.material.dispose() })
 }
 
-export function setupLights(scene, project, night = false, cutLevel = null) {
-  scene.add(new THREE.HemisphereLight(night ? '#5a6b8c' : '#f4f7fb', night ? '#2a2620' : '#b2aa95', night ? 0.55 : 1.5))
+export function setupLights(scene, project, night = false, cutLevel = null, shadowSize = 2048) {
+  scene.add(new THREE.HemisphereLight(night ? '#5a6b8c' : '#f4f7fb', night ? '#2a2620' : '#b2aa95', night ? 0.5 : 1.15))
   const sun = new THREE.DirectionalLight(night ? '#9fb4d8' : '#fff4e2', night ? 0.35 : 2.2)
   if (night) {
     // Real point lights for the brightest fixtures (capped for performance).
@@ -293,7 +294,8 @@ export function setupLights(scene, project, night = false, cutLevel = null) {
   sun.position.set(project.lot.w / 2 - span * 0.6, span * 1.1, project.lot.h / 2 + span * 0.35)
   sun.target.position.set(project.lot.w / 2, 0, project.lot.h / 2)
   sun.castShadow = true
-  sun.shadow.mapSize.set(2048, 2048)
+  sun.shadow.mapSize.set(shadowSize, shadowSize)
+  sun.shadow.radius = 3
   Object.assign(sun.shadow.camera, { left: -span, right: span, top: span, bottom: -span, near: 1, far: span * 4 })
   sun.shadow.bias = -0.0008
   scene.add(sun, sun.target)
@@ -317,8 +319,13 @@ export function snapshot(project, width = 480, height = 300) {
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true })
     renderer.setSize(width, height, false)
     renderer.shadowMap.enabled = true
+    renderer.toneMapping = THREE.NeutralToneMapping
+    renderer.toneMappingExposure = 0.92
     const scene = new THREE.Scene()
     scene.background = new THREE.Color('#e6ebee')
+    const pmrem = new THREE.PMREMGenerator(renderer)
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+    scene.environmentIntensity = 0.3
     setupLights(scene, project)
     const model = buildModel(project)
     scene.add(model)
@@ -326,7 +333,7 @@ export function snapshot(project, width = 480, height = 300) {
     frameCamera(camera, project, 0.75)
     renderer.render(scene, camera)
     const url = canvas.toDataURL('image/jpeg', 0.78)
-    disposeGroup(model); renderer.dispose()
+    disposeGroup(model); scene.environment.dispose(); pmrem.dispose(); renderer.dispose(); renderer.forceContextLoss()
     return url
   } catch { return null }
 }

@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ITEMS, MATERIALS, ROOMS, itemSize } from '../game/catalog.js'
+import { settings } from './fx.js'
 import { nearestEdge, normRect, wallEdges, roomArea } from '../engine/plan.js'
 
 // CAD-style plan editor. One finger = current tool, two fingers = pan/zoom.
@@ -28,11 +29,56 @@ export default function PlanView({
     return () => ro.disconnect()
   }, [])
 
+  // --- view motion: clamped, eased (frame-rate independent), with pan inertia (camera-systems skill)
+  const anim = useRef(0)
+  const viewRef = useRef(null)
+  viewRef.current = view
+  const fitZ = () => Math.min(size.w / (lot.w + 4), size.h / (lot.h + 8))
+  const clampView = (nv) => {
+    const z = Math.max(fitZ() * 0.45, Math.min(140, nv.z))
+    return { z, cx: Math.max(-4, Math.min(lot.w + 4, nv.cx)), cy: Math.max(-4, Math.min(lot.h + 10, nv.cy)) }
+  }
+  const stopAnim = () => { cancelAnimationFrame(anim.current); anim.current = 0 }
+  const setV = (nv) => { stopAnim(); setView(clampView(nv)) }
+  const animateTo = (target) => {
+    stopAnim()
+    const to = clampView(target)
+    if (!viewRef.current || settings.reduceMotion) return setView(to)
+    let last = performance.now()
+    const step = (now) => {
+      const dt = Math.min(0.05, (now - last) / 1000); last = now
+      const k = 1 - Math.exp(-14 * dt)
+      const cur = viewRef.current
+      const next = { cx: cur.cx + (to.cx - cur.cx) * k, cy: cur.cy + (to.cy - cur.cy) * k, z: cur.z + (to.z - cur.z) * k }
+      const done = Math.abs(next.z - to.z) < 0.01 * to.z && Math.hypot(next.cx - to.cx, next.cy - to.cy) < 0.02
+      viewRef.current = done ? to : next
+      setView(viewRef.current)
+      anim.current = done ? 0 : requestAnimationFrame(step)
+    }
+    anim.current = requestAnimationFrame(step)
+  }
+  const fling = (vx, vy) => { // vx, vy in world units per second
+    stopAnim()
+    if (settings.reduceMotion) return
+    let last = performance.now()
+    const step = (now) => {
+      const dt = Math.min(0.05, (now - last) / 1000); last = now
+      const decay = Math.exp(-5 * dt)
+      vx *= decay; vy *= decay
+      const cur = viewRef.current
+      viewRef.current = clampView({ ...cur, cx: cur.cx - vx * dt, cy: cur.cy - vy * dt })
+      setView(viewRef.current)
+      anim.current = Math.hypot(vx, vy) > 0.3 ? requestAnimationFrame(step) : 0
+    }
+    anim.current = requestAnimationFrame(step)
+  }
+  useEffect(() => stopAnim, [])
   const fit = () => {
     touched.current = false
-    const z = Math.min(size.w / (lot.w + 4), size.h / (lot.h + 8))
-    setView({ cx: lot.w / 2, cy: lot.h / 2 + 1.8, z })
+    const target = { cx: lot.w / 2, cy: lot.h / 2 + 1.8, z: fitZ() }
+    if (viewRef.current) animateTo(target); else setView(target)
   }
+  const zoomBy = (f) => { const r = svg.current.getBoundingClientRect(); touched.current = true; animateTo(zoomAt(f, r.left + size.w / 2, r.top + size.h / 2)) }
   // Refit when the canvas is measured or resized, unless the player has panned/zoomed.
   useEffect(() => { if (size.w > 1 && (!touched.current || !view)) fit() }, [size.w, size.h, fitSignal, lot.w, lot.h]) // eslint-disable-line
 
@@ -56,7 +102,7 @@ export default function PlanView({
     return { cx: wx - px / z, cy: wy - py / z, z }
   }
 
-  const begin = (next) => { g.current = next; setGesture(next); if (next && (next.kind === 'pan' || next.kind === 'pinch')) touched.current = true }
+  const begin = (next) => { if (next) stopAnim(); g.current = next; setGesture(next); if (next && (next.kind === 'pan' || next.kind === 'pinch')) touched.current = true }
 
   const onDown = (e) => {
     svg.current.setPointerCapture?.(e.pointerId)
@@ -101,13 +147,15 @@ export default function PlanView({
       const d = Math.hypot(a.x - b.x, a.y - b.y)
       const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
       const zoomed = zoomAt(d / cur.d, cur.mid.x, cur.mid.y, cur.view)
-      setView({ ...zoomed, cx: zoomed.cx - (mid.x - cur.mid.x) / zoomed.z, cy: zoomed.cy - (mid.y - cur.mid.y) / zoomed.z })
+      setV({ ...zoomed, cx: zoomed.cx - (mid.x - cur.mid.x) / zoomed.z, cy: zoomed.cy - (mid.y - cur.mid.y) / zoomed.z })
       return
     }
     const p = toWorld(e.clientX, e.clientY)
     const moved = Math.hypot(e.clientX - cur.x, e.clientY - cur.y)
     if (cur.kind === 'pan') {
-      if (moved > 4) setView({ ...cur.view, cx: cur.view.cx - (e.clientX - cur.x) / cur.view.z, cy: cur.view.cy - (e.clientY - cur.y) / cur.view.z })
+      if (moved > 4) setV({ ...cur.view, cx: cur.view.cx - (e.clientX - cur.x) / cur.view.z, cy: cur.view.cy - (e.clientY - cur.y) / cur.view.z })
+      const now = performance.now()
+      cur.samples = [...(cur.samples || []).filter(p => now - p.t < 90), { t: now, x: e.clientX, y: e.clientY }]
       return
     }
     let next = cur
@@ -133,6 +181,11 @@ export default function PlanView({
     if (e.type === 'pointercancel') return begin(null)
     const moved = Math.hypot(e.clientX - cur.x, e.clientY - cur.y)
     const p = cur.p
+    if (cur.kind === 'pan' && moved >= 7 && cur.samples?.length > 1) {
+      const a0 = cur.samples[0], a1 = cur.samples[cur.samples.length - 1]
+      const dt = (a1.t - a0.t) / 1000
+      if (dt > 0.01 && performance.now() - a1.t < 60) fling((a1.x - a0.x) / dt / v.z, (a1.y - a0.y) / dt / v.z)
+    }
     if (cur.kind === 'pan') {
       if (!cur.noTap && moved < 7 && performance.now() - cur.t < 600) onTap?.({ ...p, ...cellOf(p) })
     } else if (cur.kind === 'rect') {
@@ -152,7 +205,7 @@ export default function PlanView({
   const onWheel = (e) => {
     e.preventDefault()
     touched.current = true
-    setView(zoomAt(Math.exp(-e.deltaY * 0.0015), e.clientX, e.clientY))
+    setV(zoomAt(Math.exp(-e.deltaY * 0.0015), e.clientX, e.clientY))
   }
   useEffect(() => {
     const el = svg.current
@@ -262,8 +315,8 @@ export default function PlanView({
       </svg>
       <div className="plan-hud">
         <button className="hud-btn" onClick={fit} aria-label="Fit to lot">⤢</button>
-        <button className="hud-btn" onClick={() => setView(zoomAt(1.3, svg.current.getBoundingClientRect().left + size.w / 2, svg.current.getBoundingClientRect().top + size.h / 2))} aria-label="Zoom in">+</button>
-        <button className="hud-btn" onClick={() => setView(zoomAt(1 / 1.3, svg.current.getBoundingClientRect().left + size.w / 2, svg.current.getBoundingClientRect().top + size.h / 2))} aria-label="Zoom out">−</button>
+        <button className="hud-btn" onClick={() => zoomBy(1.4)} aria-label="Zoom in">+</button>
+        <button className="hud-btn" onClick={() => zoomBy(1 / 1.4)} aria-label="Zoom out">−</button>
       </div>
       <div className="scale-bar"><div className="sb" style={{ width: v.z * 5 }} /><span>5 m</span></div>
       <svg className="north" viewBox="-12 -12 24 24" width="34" height="34"><circle r="11" /><path d="M0 -9 L4 5 L0 2 L-4 5Z" /><text y="-12.5">N</text></svg>
@@ -328,7 +381,7 @@ function Item({ it, sel }) {
   const def = ITEMS[it.type]
   return (
     <g className={`item g-${def.group.toLowerCase()} ${def.overlay ? 'overlay' : ''} ${sel ? 'sel' : ''}`} transform={`translate(${it.x} ${it.y})`}>
-      <ItemSymbol type={it.type} w={s.w} h={s.h} />
+      <g className="item-pop"><ItemSymbol type={it.type} w={s.w} h={s.h} /></g>
       {sel && <rect width={s.w} height={s.h} className="sel-box" />}
     </g>
   )

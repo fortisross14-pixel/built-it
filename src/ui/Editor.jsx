@@ -11,6 +11,7 @@ import {
 } from '../engine/plan.js'
 import { evaluate } from '../engine/score.js'
 import { money } from './format.js'
+import { feedback } from './fx.js'
 
 // Two layers: Design (2D plan: the building and its furniture) and Decorate (3D: finishes, decor, lighting).
 const LAYERS = {
@@ -81,6 +82,7 @@ export default function Editor({ offer, kit, project: initial, onChange, onSubmi
   const [night, setNight] = useState(false)
   const [hover, setHover] = useState(null)
   const [flash, setFlash] = useState(null)
+  const [pulse, setPulse] = useState(null)
   const toastTimer = useRef(null)
 
   const level = project.levels[Math.min(li, project.levels.length - 1)]
@@ -91,24 +93,26 @@ export default function Editor({ offer, kit, project: initial, onChange, onSubmi
 
   const say = (text, kind = 'info') => {
     clearTimeout(toastTimer.current)
-    setToast({ text, kind })
+    if (kind === 'error') feedback('error')
+    setToast({ text, kind, id: Date.now() })
     toastTimer.current = setTimeout(() => setToast(null), 2600)
   }
-  const commit = (res, okMsg) => {
+  const commit = (res, okMsg, ev = 'place') => {
     const next = res?.project ?? res
     if (res?.error) { say(res.error, 'error'); return false }
     if (!next || next === project) return false
     setPast(p => [...p.slice(-59), project]); setFuture([]); setProject(next)
+    feedback(res?.removed ? 'remove' : ev)
     if (okMsg) say(okMsg)
     return true
   }
-  const undo = () => { if (!past.length) return; setFuture(f => [project, ...f]); setProject(past[past.length - 1]); setPast(p => p.slice(0, -1)); setSelection(null) }
-  const redo = () => { if (!future.length) return; setPast(p => [...p, project]); setProject(future[0]); setFuture(f => f.slice(1)) }
+  const undo = () => { if (!past.length) return; feedback('undo'); setFuture(f => [project, ...f]); setProject(past[past.length - 1]); setPast(p => p.slice(0, -1)); setSelection(null) }
+  const redo = () => { if (!future.length) return; feedback('undo'); setPast(p => [...p, project]); setProject(future[0]); setFuture(f => f.slice(1)) }
 
   const deleteSelection = () => {
     if (!selection) return
-    if (selection.kind === 'room') commit(removeRoom(project, li, selection.id))
-    else commit(removeItem(project, li, selection.id))
+    if (selection.kind === 'room') commit(removeRoom(project, li, selection.id), null, 'remove')
+    else commit(removeItem(project, li, selection.id), null, 'remove')
     setSelection(null)
   }
 
@@ -125,35 +129,36 @@ export default function Editor({ offer, kit, project: initial, onChange, onSubmi
   })
 
   const switchLayer = (l) => {
+    if (l !== layer) feedback('tool')
     setLayer(l); setSelection(null); setHover(null)
     setTool(l === 'design' ? 'select' : 'look')
   }
-  const pickTool = (t) => { setTool(t); setSelection(null); if (t === 'furnish' && !itemType) setItemType(brief.items[0].type) }
+  const pickTool = (t) => { if (t !== tool) feedback('tool'); setTool(t); setSelection(null); if (t === 'furnish' && !itemType) setItemType(brief.items[0].type) }
 
   // ---------------------------------------------------------------- Design (2D) handlers
   const handleTap = ({ wx, wy, x, y }) => {
     if (tool === 'select' || tool === 'room') {
       const it = tool === 'select' ? itemAt(level, x, y) : null
-      if (it) return setSelection({ kind: 'item', id: it.id })
+      if (it) { feedback('select'); return setSelection({ kind: 'item', id: it.id }) }
       const r = roomAt(level, x, y)
-      if (r) { setSelection({ kind: 'room', id: r.id }); if (tool === 'room') setTool('select'); return }
+      if (r) { feedback('select'); setSelection({ kind: 'room', id: r.id }); if (tool === 'room') setTool('select'); return }
       return setSelection(null)
     }
     if (tool === 'door') {
       const e = nearestEdge(wx, wy)
       if (e.dist > 0.45) return say('Tap closer to a wall.')
-      return commit(toggleOpening(project, li, e.key, 'door'))
+      return commit(toggleOpening(project, li, e.key, 'door'), null, 'opening')
     }
     if (tool === 'erase') {
       const it = itemAt(level, x, y)
-      if (it) return commit(removeItem(project, li, it.id))
+      if (it) return commit(removeItem(project, li, it.id), null, 'remove')
       const e = nearestEdge(wx, wy)
       if (e.dist < 0.3) {
-        if (level.doors.includes(e.key)) return commit(toggleOpening(project, li, e.key, 'door'))
-        if (level.windows.includes(e.key)) return commit(toggleOpening(project, li, e.key, 'window'))
+        if (level.doors.includes(e.key)) return commit(toggleOpening(project, li, e.key, 'door'), null, 'remove')
+        if (level.windows.includes(e.key)) return commit(toggleOpening(project, li, e.key, 'window'), null, 'remove')
       }
       const r = roomAt(level, x, y)
-      if (r) return commit(removeRoom(project, li, r.id))
+      if (r) return commit(removeRoom(project, li, r.id), null, 'remove')
     }
     if (tool === 'furnish' && itemType) {
       const s = itemSize({ type: itemType, rot: itemRot })
@@ -162,7 +167,7 @@ export default function Editor({ offer, kit, project: initial, onChange, onSubmi
   }
   const handleRect = (rect) => {
     const res = addRoom(project, li, rect, roomType, floorMat)
-    if (commit(res)) setSelection({ kind: 'room', id: res.room.id })
+    if (commit(res, null, 'room')) setSelection({ kind: 'room', id: res.room.id })
   }
   const handleStroke = (keys) => {
     let p = project, last = null
@@ -171,7 +176,7 @@ export default function Editor({ offer, kit, project: initial, onChange, onSubmi
       if (r.error) last = r.error; else p = r.project
     }
     if (p === project && last) say(last, 'error')
-    else commit(p)
+    else commit(p, null, 'opening')
   }
   const handleDrop = (o) => { if (itemType) commit(placeItem(project, li, { type: itemType, rot: itemRot, q: quality, ...o })) }
   const handleMove = (id, o) => commit(moveItem(project, li, id, o))
@@ -183,25 +188,29 @@ export default function Editor({ offer, kit, project: initial, onChange, onSubmi
     const room = roomAt(level, p.x, p.y)
     if (tool === 'look') {
       const it = decorAt(level, p.x, p.y, false) || (itemAt(level, p.x, p.y))
-      if (it) return setSelection({ kind: 'item', id: it.id })
+      if (it) { feedback('select'); return setSelection({ kind: 'item', id: it.id }) }
+      if (room) feedback('select')
       return setSelection(room ? { kind: 'room', id: room.id } : null)
     }
     if (tool === 'floor' || tool === 'paint') {
       if (!room) return say('Tap inside a room.')
       if (tool === 'floor') {
         if (ROOMS[room.type].wet && !MATERIALS[floorMat].wetSafe) return say(`${MATERIALS[floorMat].label} isn't water-safe. Not for a ${ROOMS[room.type].label.toLowerCase()}.`, 'error')
-        commit(updateRoom(project, li, room.id, { floor: floorMat, floorQ: quality }))
-      } else commit(updateRoom(project, li, room.id, { wall: paint, wallQ: quality }))
+        commit(updateRoom(project, li, room.id, { floor: floorMat, floorQ: quality }), null, 'paint')
+      } else commit(updateRoom(project, li, room.id, { wall: paint, wallQ: quality }), null, 'paint')
+      setPulse({ x: p.wx, y: p.wy, w: 2, h: 2, li, id: Date.now() })
       setFlash(room.id); setTimeout(() => setFlash(null), 300)
       return
     }
     if (placing) {
       if (ITEMS[placing].site && li !== 0) return say('Landscaping goes on the ground level.')
-      return commit(placeItem(project, li, { type: placing, rot: itemRot, q: quality, ...originAt(p, placing) }))
+      const o = originAt(p, placing), sz = itemSize({ type: placing, rot: itemRot })
+      if (commit(placeItem(project, li, { type: placing, rot: itemRot, q: quality, ...o }))) setPulse({ x: o.x + sz.w / 2, y: o.y + sz.h / 2, w: sz.w, h: sz.h, li, ceiling: ITEMS[placing].ceiling, id: Date.now() })
+      return
     }
     if (tool === 'remove') {
       const it = decorAt(level, p.x, p.y, true)
-      if (it) return commit(removeItem(project, li, it.id))
+      if (it) return commit(removeItem(project, li, it.id), null, 'remove')
       say('Nothing to remove there. Furniture is removed in Design 2D.')
     }
   }
@@ -309,7 +318,7 @@ export default function Editor({ offer, kit, project: initial, onChange, onSubmi
             onTap={handleTap} onRect={handleRect} onStroke={handleStroke} onItemDrop={handleDrop} onMoveItem={handleMove} />
         ) : (
           <View3D project={project} cutLevel={showAll ? null : li} night={night} pickLevel={li}
-            onTap={tap3D} onHover={setHover} highlights={highlights} />
+            onTap={tap3D} onHover={setHover} highlights={highlights} pulse={pulse} focusLevel={li} />
         )}
 
         <div className="levels">
@@ -342,7 +351,7 @@ export default function Editor({ offer, kit, project: initial, onChange, onSubmi
           </div>
         )}
 
-        {toast && <div className={`toast ${toast.kind}`}>{toast.text}</div>}
+        {toast && <div key={toast.id} className={`toast ${toast.kind}`} role="status" aria-live="polite">{toast.text}</div>}
       </main>
 
       <section className="ed-palette">{palette}</section>
@@ -363,7 +372,7 @@ export default function Editor({ offer, kit, project: initial, onChange, onSubmi
             </ul>
             <div className="row end">
               <button className="ghost" onClick={() => setConfirm(false)}>Keep designing</button>
-              <button className="primary" onClick={() => onSubmit(project)}><Icon name="stamp" size={18} />Submit</button>
+              <button className="primary" onClick={() => { feedback('stamp'); onSubmit(project) }}><Icon name="stamp" size={18} />Submit</button>
             </div>
           </div>
         </div>

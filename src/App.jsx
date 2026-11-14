@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import Editor from './ui/Editor.jsx'
 import { CareerEnd, Collection, Home, Hub, Legacy, NewCareer, Review, WorkModal } from './ui/screens.jsx'
 import { snapshot } from './ui/scene.js'
@@ -30,7 +30,31 @@ function persist(save) {
 export default function App() {
   const [save, setSave] = useState(load)
   const { meta, career } = save
-  const [screen, setScreen] = useState(() => (save.career ? (save.career.reward ? 'review' : save.career.status !== 'active' ? 'end' : 'hub') : 'home'))
+  const [screen, setScreenState] = useState(() => (save.career ? (save.career.reward ? 'review' : save.career.status !== 'active' ? 'end' : 'hub') : 'home'))
+  const screenRef = useRef(screen)
+  screenRef.current = screen
+  // Screens form a stack in browser history, so the phone's back gesture steps back a screen
+  // instead of leaving the game (game-ui-ux: screen stack).
+  const setScreen = (next) => {
+    if (next === screenRef.current) return
+    setScreenState(next)
+    try { window.history.pushState({ screen: next }, '') } catch { /* sandboxed */ }
+  }
+  useEffect(() => {
+    // Seed history so a restored session (opened straight into the studio) still backs out to Home.
+    try {
+      window.history.replaceState({ screen: 'home' }, '')
+      if (screenRef.current !== 'home') window.history.pushState({ screen: screenRef.current }, '')
+    } catch { /* sandboxed */ }
+    const onPop = () => {
+      const cur = screenRef.current
+      const parent = { editor: 'hub', hub: 'home', new: 'home', collection: 'home', legacy: 'home' }[cur]
+      if (!parent) { try { window.history.pushState({ screen: cur }, '') } catch { /* sandboxed */ } return }
+      setScreenState(parent)
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
   const [work, setWork] = useState(null)
 
   useEffect(() => { persist(save) }, [save])
