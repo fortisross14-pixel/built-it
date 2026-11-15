@@ -1,4 +1,4 @@
-# BUILT: an architect's career
+# Built it! An architect's career
 
 A roguelite architecture game. Start as a junior architect with a corner shop. Grades decide where your career goes next, and what every future architect can build with.
 
@@ -50,7 +50,7 @@ The menus use **Monograph**, a design language based on architects' presentation
 Project icons load from `public/art/projects/<id>.jpg`. See `ART_PROMPTS.md` for the image prompts and `scripts/slice-art.cjs` to cut a 6×4 grid into tiles.
 
 ## Install as an app
-BUILT is a PWA. Open the site on a phone and use **Settings → Install BUILT**. On iPhone, use Safari's **Share → Add to Home Screen**. It runs fullscreen and works offline after the first visit, because the service worker caches the game and all its art. Icons are rendered by `scripts/make-icons.cjs`.
+Built it! is a PWA. Open the site on a phone and use **Settings → Install Built it!**. If the browser has no install prompt, the button shows the manual steps for your browser. On iPhone, use Safari's **Share → Add to Home Screen**. It runs fullscreen and works offline after the first visit, because the service worker caches the game and all its art. Icons are rendered by `scripts/make-icons.cjs`.
 
 ## Controls
 - Plan: one finger uses the tool, two fingers pan and pinch-zoom. Mouse: wheel zooms, right-drag pans.

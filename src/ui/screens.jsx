@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { feedback, onSettings, setSetting, settings as fxSettings } from './fx.js'
 import { canPrompt, isIOS, isStandalone, onInstallChange, promptInstall } from './install.js'
 import Icon from './icons.jsx'
@@ -26,6 +27,19 @@ export function GradeBadge({ g, big }) {
   return <span className={`grade ${GRADE_COLOR[g] || ''} ${big ? 'big' : ''}`}>{g}</span>
 }
 
+// Manual install steps when the browser doesn't offer its own install prompt.
+function installHelp() {
+  const ua = navigator.userAgent
+  if (/FBAN|FBAV|Instagram|WhatsApp|Line\/|GSA\/|Snapchat|TikTok|LinkedInApp/i.test(ua))
+    return <>You're in an app's built-in browser, which can't install apps. Open this page in <b>Safari</b> (iPhone) or <b>Chrome</b> (Android), then tap Install again.</>
+  if (isIOS()) return /CriOS|FxiOS|EdgiOS/.test(ua)
+    ? <>Tap the <b>Share</b> icon in the address bar, then <b>Add to Home Screen</b>. If you don't see it, open the page in Safari and use <b>Share → Add to Home Screen</b>.</>
+    : <>Tap <b>Share</b> (the square with an arrow) in Safari's toolbar, scroll down and tap <b>Add to Home Screen</b>, then <b>Add</b>.</>
+  if (/SamsungBrowser/.test(ua)) return <>Tap the <b>menu (≡)</b>, then <b>Add page to → Home screen</b>.</>
+  if (/Firefox/.test(ua)) return <>Tap the <b>menu (⋮)</b>, then <b>Install</b> or <b>Add to Home screen</b>.</>
+  return <>Tap the browser <b>menu (⋮)</b>, then <b>Install app</b> or <b>Add to Home screen</b>. If it isn't there yet, reload the page once and try again.</>
+}
+
 // ------------------------------------------------------------------ Settings
 export function SettingsButton() {
   const [open, setOpen] = useState(false)
@@ -43,7 +57,7 @@ export function SettingsButton() {
   return (
     <>
       <button className="icon-btn" onClick={() => { feedback('tap'); setOpen(true) }} aria-label="Settings"><Icon name="gear" /></button>
-      {open && (
+      {open && createPortal(
         <div className="modal-wrap" onClick={() => setOpen(false)}>
           <div className="modal" onClick={e => e.stopPropagation()} role="dialog" aria-label="Settings">
             <h3>Settings</h3>
@@ -54,24 +68,24 @@ export function SettingsButton() {
                 </button>
               ))}
             </div>
-            {!installed && (canPrompt() || isIOS()) && (
+            {!installed && (
               <div className="install-row">
-                <span><b>Install BUILT</b><small>Play fullscreen from your home screen, even offline.</small></span>
+                <span><b>Install Built it!</b><small>Play fullscreen from your home screen, even offline.</small></span>
                 <button className="ghost small" onClick={async () => { feedback('select'); if (canPrompt()) await promptInstall(); else setIosHelp(h => !h) }}><Icon name="plus" size={16} />Install</button>
-                {iosHelp && <p className="dim small ios-help">On iPhone or iPad: tap <b>Share</b> in Safari's toolbar, then <b>Add to Home Screen</b>.</p>}
+                {iosHelp && <p className="dim small ios-help">{installHelp()}</p>}
               </div>
             )}
             {installed && <p className="dim small">Installed as an app. Your progress is saved on this device.</p>}
             <div className="row end"><button className="primary" onClick={() => setOpen(false)} autoFocus>Done</button></div>
           </div>
-        </div>
+        </div>, document.body
       )}
     </>
   )
 }
 
 function Brand({ small }) {
-  return <div className={`brand ${small ? 'small' : ''}`}><span className="brand-mark" aria-hidden="true"><i /><i /></span><span className="brand-word"><b>BUILT</b><em>architecture</em></span></div>
+  return <div className={`brand ${small ? 'small' : ''}`}><span className="brand-mark" aria-hidden="true"><i /><i /></span><span className="brand-word"><b>BUILT IT!</b><em>architecture</em></span></div>
 }
 
 const unlockables = () => [...Object.entries(ITEMS), ...Object.entries(MATERIALS)].filter(([, d]) => d.unlock)
