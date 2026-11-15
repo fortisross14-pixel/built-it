@@ -22,7 +22,7 @@ const PRESETS = {
   },
   // Portrait cells (busts): take a square around the face (top part of each cell).
   architects: {
-    cols: 6, rows: 2, dir: 'architects', face: { size: 0.92, top: 0.035 },
+    cols: 6, rows: 2, dir: 'architects', face: { size: 1, top: 0 },
     names: Array.from({ length: 12 }, (_, i) => `a${String(i + 1).padStart(2, '0')}`),
   },
 }
