@@ -23,9 +23,9 @@ export function onSettings(fn) { listeners.add(fn); return () => listeners.delet
 export function applyMotionClass() {
   if (typeof document === 'undefined') return
   document.documentElement.classList.toggle('reduce-motion', !!settings.reduceMotion)
-  document.documentElement.dataset.theme = settings.theme || 'studio'
+  document.documentElement.dataset.theme = 'monograph'
   const meta = document.querySelector('meta[name="theme-color"]')
-  if (meta) meta.content = { studio: '#121519', blueprint: '#0b2341', atelier: '#efe8dc' }[settings.theme] || '#121519'
+  if (meta) meta.content = '#efefec'
 }
 
 // ---------------------------------------------------------------- audio

@@ -4,13 +4,13 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { settings } from './fx.js'
 import { LEVEL_HEIGHT } from '../game/catalog.js'
-import { buildModel, disposeGroup, frameCamera, setupLights } from './scene.js'
+import { buildModel, disposeGroup, frameCamera, setupLights, toModelLook } from './scene.js'
 
 // Interactive low-poly 3D view. Drag to orbit, pinch to zoom, two fingers to pan.
 // With onTap, a quick tap picks a point on the floor of `pickLevel` and reports the cell.
 export default function View3D({
   project, cutLevel = null, autoRotate = false, interactive = true, className = '', zoom = 1,
-  night = false, pickLevel = null, onTap, onHover, highlights = [], pulse = null, focusLevel = null, showCeilings = false,
+  night = false, pickLevel = null, onTap, onHover, highlights = [], pulse = null, focusLevel = null, showCeilings = false, look = 'color',
 }) {
   const host = useRef(null)
   const state = useRef(null)
@@ -157,6 +157,7 @@ export default function View3D({
     setupLights(s.scene, project, night, cutLevel, s.lowEnd ? 1024 : 2048)
     s.scene.environmentIntensity = night ? 0.06 : 0.45
     s.model = buildModel(project, { cutLevel, showCeilings })
+    if (look === 'model') toModelLook(s.model)
     s.scene.add(s.model, s.overlay)
     s.project = project; s.zoom = zoom
     const key = `${project.lot.w}x${project.lot.h}:${project.levels.length}`
@@ -166,7 +167,7 @@ export default function View3D({
       s.framedFor = key
     }
     s.invalidate(); s.wake()
-  }, [project, cutLevel, night, showCeilings])
+  }, [project, cutLevel, night, showCeilings, look])
 
   // Glide the orbit target to the active level instead of snapping (camera-systems skill).
   useEffect(() => {
@@ -217,5 +218,5 @@ export default function View3D({
     s.invalidate(); s.wake()
   }, [highlights])
 
-  return <div ref={host} className={`view3d ${night ? 'night' : ''} ${className}`} />
+  return <div ref={host} className={`view3d ${night ? 'night' : ''} look-${look} ${className}`} />
 }

@@ -386,6 +386,26 @@ export function buildModel(project, { cutLevel = null, context = true, showCeili
   return group
 }
 
+// White massing-model look (presentation model): every material becomes a near-white matte,
+// keeping a little of its value so forms still read. Glass stays faintly translucent.
+const modelCache = new Map()
+export function toModelLook(group) {
+  group.traverse(o => {
+    if (!o.isMesh) return
+    const m = o.material
+    if (!modelCache.has(m)) {
+      const c = m.color.clone()
+      const l = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
+      const v = 0.6 + l * 0.36
+      modelCache.set(m, new THREE.MeshStandardMaterial({
+        color: new THREE.Color(v, v, v * 0.995), roughness: 0.95, flatShading: true,
+        transparent: m.transparent, opacity: m.transparent ? Math.min(0.5, m.opacity) : 1,
+      }))
+    }
+    o.material = modelCache.get(m)
+  })
+}
+
 export function disposeGroup(group, materials = false) {
   group.traverse(o => { if (o.geometry) o.geometry.dispose(); if (materials && o.material) o.material.dispose() })
 }

@@ -32,8 +32,10 @@ Every new architect picks a name, age, gender, country and a background:
 - **Architect + engineering:** missed requirements cost 30% fewer points.
 - **Architect + business:** construction costs −10%.
 
-## Styles and art
-Settings has three visual styles: **Drafting Studio** (dark CAD), **Blueprint** (cyanotype) and **Atelier** (warm paper, serif). Project icons load from `public/art/projects/<id>.png`. See `ART_PROMPTS.md` for the image prompts and `scripts/slice-art.cjs` to cut a 6×4 grid into tiles.
+## Design
+The menus use **Monograph**, a design language based on architects' presentation decks: off-white paper, floating white cards, hairlines, light/bold title pairs, large condensed numerals (Antonio), self-drawing linework, a white massing-model 3D hero, and diamond-cropped project images with numbered markers. Motion is calm: pages wipe in like deck slides, windows unfold and fold away, and lists stagger in. The plan drawing keeps its CAD mono type.
+
+Project icons load from `public/art/projects/<id>.png`. See `ART_PROMPTS.md` for the image prompts and `scripts/slice-art.cjs` to cut a 6×4 grid into tiles.
 
 ## Controls
 - Plan: one finger uses the tool, two fingers pan and pinch-zoom. Mouse: wheel zooms, right-drag pans.

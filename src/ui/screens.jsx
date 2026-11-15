@@ -10,6 +10,7 @@ import { MAX_LEVEL, RANKS, feeFor, randomArchitect, rankFor } from '../engine/ca
 import { referenceCafe } from '../game/demo.js'
 import { BACKGROUNDS, COUNTRIES, GENDERS, countryName, flag } from '../game/architects.js'
 import ProjectArt from './ProjectArt.jsx'
+import { Diamond, Num, PerspectiveLines, Title, WaveMesh, Window } from './deco.jsx'
 import PlanView from './PlanView.jsx'
 import { money } from './format.js'
 
@@ -40,14 +41,6 @@ export function SettingsButton() {
         <div className="modal-wrap" onClick={() => setOpen(false)}>
           <div className="modal" onClick={e => e.stopPropagation()} role="dialog" aria-label="Settings">
             <h3>Settings</h3>
-            <span className="mono dim">STYLE</span>
-            <div className="theme-pick">
-              {[['studio', 'Drafting Studio'], ['blueprint', 'Blueprint'], ['atelier', 'Atelier']].map(([id, label]) => (
-                <button key={id} className={s.theme === id ? 'on' : ''} onClick={() => { setSetting('theme', id); feedback('select') }}>
-                  <span className={`sample ${id}`}><i /><b /></span>{label}
-                </button>
-              ))}
-            </div>
             <div className="settings-list">
               {rows.map(([k, label, hint]) => (
                 <button key={k} className="toggle-row" role="switch" aria-checked={!!s[k]} onClick={() => { setSetting(k, !s[k]); feedback('select') }}>
@@ -64,7 +57,7 @@ export function SettingsButton() {
 }
 
 function Brand({ small }) {
-  return <div className={`brand ${small ? 'small' : ''}`}><span className="brand-mark">B</span><span className="brand-word">BUILT</span></div>
+  return <div className={`brand ${small ? 'small' : ''}`}><span className="brand-mark" aria-hidden="true"><i /><i /></span><span className="brand-word"><b>BUILT</b><em>architecture</em></span></div>
 }
 
 const unlockables = () => [...Object.entries(ITEMS), ...Object.entries(MATERIALS)].filter(([, d]) => d.unlock)
@@ -76,33 +69,32 @@ export function Home({ meta, career, onContinue, onNew, onUnlocks, onLegacy }) {
     return last || referenceCafe()
   }, [career, meta])
   const total = unlockables().length
+  const items = []
+  if (career && career.status === 'active') items.push({ t: 'Continue', d: `${career.name} · Level ${career.level} · ${money(career.cash, true)}`, on: onContinue, main: true })
+  if (career && career.status !== 'active') items.push({ t: 'Close out the career', d: career.name, on: onContinue, main: true })
+  items.push({ t: career ? 'New architect' : 'Open your studio', d: career ? 'End this career and start another' : 'Start with a corner shop', on: onNew, main: !career })
+  items.push({ t: 'Unlocks', d: `${meta.unlocked.length} of ${total} pieces, shared by every architect`, on: onUnlocks })
+  items.push({ t: 'Legacy hall', d: meta.legacy.length ? `${meta.legacy.length} finished career${meta.legacy.length > 1 ? 's' : ''}` : 'No plaques yet', on: onLegacy })
   return (
     <div className="home">
-      <div className="home-hero">
-        <View3D project={demo} autoRotate interactive={false} className="hero-3d" zoom={1.45} />
-        <div className="hero-fade" />
+      <WaveMesh className="tl" />
+      <div className="home-model"><View3D project={demo} autoRotate interactive={false} className="hero-3d" zoom={1.35} look="model" /></div>
+      <header className="home-top"><Brand /><SettingsButton /></header>
+      <div className="home-card">
+        <span className="eyebrow">An architecture career game</span>
+        <Title light="Your" bold="Architecture" after="Office" />
+        <p className="lead">Start with a corner shop. Grade well and the work grows into restaurants, museums, arenas and an airport.</p>
+        <nav className="menu-list" aria-label="Main menu">
+          {items.map((it, i) => (
+            <button key={it.t} className={`menu-item ${it.main ? 'main' : ''}`} onClick={() => { feedback('select'); it.on() }} style={{ animationDelay: `${0.25 + i * 0.07}s` }}>
+              <span className="mi-n">{String(i + 1).padStart(2, '0')}</span>
+              <span className="mi-t"><b>{it.t}</b><em>{it.d}</em></span>
+              <Icon name="chevron" size={18} className="mi-go" />
+            </button>
+          ))}
+        </nav>
       </div>
-      <div className="home-panel">
-        <div className="row between"><Brand /><SettingsButton /></div>
-        <h1>Build a name.<br />One commission at a time.</h1>
-        <p className="lead">Start with a corner shop. Grade well and the work grows: restaurants, museums, stadiums, an airport. Each grade unlocks better pieces for every architect after you. Fees buy supplies for this one.</p>
-        <div className="home-actions">
-          {career && career.status === 'active' && (
-            <button className="primary big" onClick={onContinue}><Icon name="play" size={18} />Continue {career.name}<span className="mono dim">Level {career.level} · {money(career.cash, true)}</span></button>
-          )}
-          {career && career.status !== 'active' && (
-            <button className="primary big" onClick={onContinue}><Icon name="flag" size={18} />Close out {career.name}'s career</button>
-          )}
-          <button className={career ? 'ghost big' : 'primary big'} onClick={onNew}><Icon name="plus" size={18} />{career ? 'New architect' : 'Start your career'}</button>
-          <div className="row">
-            <button className="ghost" onClick={onUnlocks}><Icon name="lock" size={18} />Unlocks <span className="mono dim">{meta.unlocked.length}/{total}</span></button>
-            <button className="ghost" onClick={onLegacy}><Icon name="trophy" size={18} />Legacy <span className="mono dim">{meta.legacy.length}</span></button>
-          </div>
-        </div>
-        <div className="loop mono">
-          <span>COMMISSION</span><Icon name="chevron" size={14} /><span>DESIGN</span><Icon name="chevron" size={14} /><span>GRADE F·C·B·A·S</span><Icon name="chevron" size={14} /><span>UNLOCK</span><Icon name="chevron" size={14} /><span>CLIMB</span>
-        </div>
-      </div>
+      <footer className="home-foot"><span>Commission</span><i /><span>Design</span><i /><span>Grade</span><i /><span>Unlock</span><i /><span>Climb</span></footer>
     </div>
   )
 }
@@ -118,8 +110,9 @@ export function NewCareer({ meta, onStart, onBack, warnReplace }) {
     <div className="page">
       <header className="page-top"><button className="icon-btn" onClick={onBack} aria-label="Back"><Icon name="back" /></button><Brand small /><span /></header>
       <div className="page-body narrow">
-        <span className="mono dim">ARCHITECT #{meta.careers + 1}</span>
-        <h2>Who's opening the studio?</h2>
+        <WaveMesh className="tr" />
+        <span className="eyebrow">Architect no. {String(meta.careers + 1).padStart(2, '0')}</span>
+        <Title as="h2" light="Who's opening" bold="the studio?" />
         {warnReplace && <p className="warn">Your current architect's career will end and go to the legacy hall.</p>}
         <div className="profile-card">
           <div className="avatar big">{name.split(' ').map(x => x[0]).join('').slice(0, 2)}<span className="avatar-flag">{flag(country)}</span></div>
@@ -157,9 +150,9 @@ export function NewCareer({ meta, onStart, onBack, warnReplace }) {
         <div className="field">
           <span className="mono dim">BACKGROUND</span>
           <div className="bg-grid">
-            {Object.entries(BACKGROUNDS).map(([id, b]) => (
+            {Object.entries(BACKGROUNDS).map(([id, b], i) => (
               <button key={id} className={`bg-card ${background === id ? 'on' : ''}`} onClick={() => { feedback('select'); setBackground(id) }}>
-                <Icon name={b.icon} size={22} /><b>{b.label}</b><span>{b.text}</span>
+                <Num n={i + 1} /><b>{b.label}</b><span>{b.text}</span>
               </button>
             ))}
           </div>
@@ -180,19 +173,17 @@ export function NewCareer({ meta, onStart, onBack, warnReplace }) {
 function Ladder({ career }) {
   const byLevel = {}
   career.portfolio.forEach(p => { (byLevel[p.offer.level] ||= []).push(p) })
+  const pct = (career.level - 1) / (MAX_LEVEL - 1) * 100
   return (
-    <div className="ladder" role="list" aria-label="Difficulty ladder">
-      {Array.from({ length: MAX_LEVEL }, (_, i) => i + 1).map(l => {
-        const briefs = Object.values(BRIEFS).filter(b => b.level === l)
-        return (
-          <div key={l} role="listitem" className={`rung ${l === career.level ? 'now' : ''} ${l < career.level ? 'past' : ''}`}>
-            <span className="rung-n mono">{l}</span>
-            <div className="rung-icons">{briefs.slice(0, 3).map(b => <Icon key={b.name} name={INDUSTRIES[b.industry].icon} size={14} />)}</div>
-            <div className="rung-done">{(byLevel[l] || []).map((p, i) => <GradeBadge key={i} g={p.grade} />)}</div>
-            {l === career.level && <span className="rung-you mono">YOU</span>}
-          </div>
-        )
-      })}
+    <div className="ladder-scale" aria-label={`Level ${career.level} of ${MAX_LEVEL}`}>
+      <div className="ls-line"><i style={{ width: `${pct}%` }} /></div>
+      {Array.from({ length: MAX_LEVEL }, (_, i) => i + 1).map(l => (
+        <div key={l} className={`ls-tick ${l === career.level ? 'now' : ''} ${l < career.level ? 'past' : ''}`} style={{ left: `${(l - 1) / (MAX_LEVEL - 1) * 100}%` }}>
+          <span className="ls-grades">{(byLevel[l] || []).map((p, i) => <GradeBadge key={i} g={p.grade} />)}</span>
+          <b>{String(l).padStart(2, '0')}</b>
+          {l === career.level && <em>you</em>}
+        </div>
+      ))}
     </div>
   )
 }
@@ -203,6 +194,7 @@ export function Hub({ career, meta, onAccept, onResume, onHome, onRetire, onOpen
   const rank = rankFor(career.rep)
   const nextRank = RANKS.find(r => r.rep > career.rep)
   const slots = Array.from({ length: career.maxCommissions }, (_, i) => career.portfolio[i] || null)
+  const prof = career.profile || {}
   return (
     <div className="page hub">
       <header className="page-top">
@@ -211,74 +203,98 @@ export function Hub({ career, meta, onAccept, onResume, onHome, onRetire, onOpen
         <div className="row"><SettingsButton /><button className="ghost small" onClick={() => setConfirmRetire(true)}><Icon name="flag" size={16} /><span className="hide-xs">Retire</span></button></div>
       </header>
       <div className="page-body">
-        <section className="architect">
-          <div className="avatar">{career.name.split(' ').map(s => s[0]).join('').slice(0, 2)}{career.profile?.country && <span className="avatar-flag">{flag(career.profile.country)}</span>}</div>
-          <div className="who">
-            <span className="mono dim">STUDIO OF</span>
-            <h2>{career.name}</h2>
-            {career.profile && <span className="profile-line mono dim">{[career.profile.age && `${career.profile.age}`, career.profile.country && countryName(career.profile.country), BACKGROUNDS[career.profile.background]?.label].filter(Boolean).join(' · ').toUpperCase()}</span>}
-            <span className="rank">{rank.title}{nextRank && <em className="mono dim"> · {nextRank.rep - career.rep} rep to {nextRank.title}</em>}</span>
-          </div>
-          <div className="stat">
-            <span className="mono dim">CASH</span>
-            <b>{money(career.cash)}</b>
-            <button className="ghost small" onClick={onShop}><Icon name="bag" size={16} />Supplier catalogue</button>
-          </div>
-          <div className="stat">
-            <span className="mono dim">STRIKES</span>
-            <div className="strikes">{Array.from({ length: career.maxStrikes }, (_, i) => <span key={i} className={i < career.strikes ? 'hit' : ''}><Icon name="x" size={16} stroke={2.6} /></span>)}</div>
-            <span className="mono dim small">an F = strike</span>
-          </div>
+        <section className="studio-head">
+          <WaveMesh className="tr" />
+          <span className="eyebrow">Studio of</span>
+          <h1 className="display-xl">{career.name}</h1>
+          <p className="studio-meta">
+            {prof.country && <span>{flag(prof.country)} {countryName(prof.country)}</span>}
+            {prof.age && <span>{prof.age}</span>}
+            {prof.background && <span>{BACKGROUNDS[prof.background]?.label}</span>}
+            <span className="rank">{rank.title}</span>
+          </p>
         </section>
 
-        <section>
-          <div className="sec-head"><h3>Difficulty ladder</h3><span className="mono dim">S +2 · A +1 · B +1 · C −1</span></div>
+        <section className="kpis">
+          <div><span className="eyebrow">Level</span><b className="display-num">{String(career.level).padStart(2, '0')}<small>/{MAX_LEVEL}</small></b></div>
+          <div><span className="eyebrow">Cash</span><b className="display-num">{money(career.cash, true)}</b><button className="link-btn" onClick={onShop}>Supplier catalogue<Icon name="chevron" size={14} /></button></div>
+          <div><span className="eyebrow">Reputation</span><b className="display-num">{career.rep}</b>{nextRank && <em className="dim small">{nextRank.rep - career.rep} to {nextRank.title}</em>}</div>
+          <div><span className="eyebrow">Strikes</span><div className="strike-dots">{Array.from({ length: career.maxStrikes }, (_, i) => <i key={i} className={i < career.strikes ? 'hit' : ''} />)}</div><em className="dim small">an F is a strike</em></div>
+        </section>
+
+        <section className="card-float ladder-card">
+          <div className="sec-head"><Title as="h3" light="Difficulty" bold="ladder" /><span className="eyebrow">S +2 · A +1 · B +1 · C −1</span></div>
           <Ladder career={career} />
         </section>
 
         {career.current ? (
-          <section className="resume">
-            <div>
-              <span className="mono dim">ON THE BOARD{career.current.attempts ? ` · ATTEMPT ${career.current.attempts + 1}` : ''}</span>
+          <section className="card-float resume">
+            <ProjectArt briefId={career.current.offer.briefId} size={84} />
+            <div className="grow">
+              <span className="eyebrow">On the drawing board{career.current.attempts ? ` · attempt ${career.current.attempts + 1}` : ''}</span>
               <h3>{BRIEFS[career.current.offer.briefId].name}</h3>
               <p className="dim">{career.current.offer.client}</p>
             </div>
-            <button className="primary big" onClick={onResume}><Icon name="play" size={18} />Back to the drawing board</button>
+            <button className="primary big" onClick={onResume}><Icon name="play" size={18} />Continue designing</button>
           </section>
         ) : (
-          <section>
-            <div className="sec-head"><h3>Commission board</h3><span className="mono dim">LEVEL {career.level}</span></div>
-            <div className="offers">
-              {career.offers.map(o => <OfferTile key={o.id} offer={o} meta={meta} onOpen={() => { feedback('tap'); setOpenOffer(o) }} />)}
+          <section className="board">
+            <div className="board-text">
+              <span className="eyebrow">Level {String(career.level).padStart(2, '0')}</span>
+              <Title as="h2" light="Commission" bold="board" />
+              <p className="dim">{career.offers.filter(o => !o.locked).length} clients would like to meet you. Open a project to read the brief.</p>
+              <ol className="board-list">
+                {career.offers.map((o, i) => {
+                  const b = BRIEFS[o.briefId]
+                  const [tagLabel, tagClass] = TAGS[o.tag] || TAGS.match
+                  return (
+                    <li key={o.id} style={{ animationDelay: `${0.1 + i * 0.07}s` }}>
+                      <button className={`bl-item ${o.locked ? 'locked' : ''}`} onClick={() => { feedback('tap'); setOpenOffer(o) }}>
+                        <Num n={i + 1} />
+                        <span className="bl-t"><b>{b.name}</b><em>LV {o.level} · {money(o.budget, true)} · <span className={`offer-tag ${tagClass}`}>{tagLabel}</span></em></span>
+                        <Icon name={o.locked ? 'lock' : 'chevron'} size={16} className="mi-go" />
+                      </button>
+                    </li>
+                  )
+                })}
+              </ol>
+            </div>
+            <div className={`diamonds n${career.offers.length}`}>
+              {career.offers.map((o, i) => (
+                <Diamond key={o.id} n={i + 1} locked={o.locked} onClick={() => { feedback('tap'); setOpenOffer(o) }} style={{ animationDelay: `${0.15 + i * 0.09}s` }}>
+                  <ProjectArt briefId={o.briefId} size={240} className="fill" />
+                </Diamond>
+              ))}
             </div>
           </section>
         )}
 
         <section>
-          <div className="sec-head"><h3>Portfolio</h3><span className="mono dim">{career.portfolio.length}/{career.maxCommissions} COMMISSIONS</span></div>
-          <div className="timeline">
-            {slots.map((p, i) => (
-              <button key={i} className={`slot ${p ? 'done' : i === career.portfolio.length ? 'next' : ''}`} onClick={() => p && onOpenWork(p)} disabled={!p}>
-                {p?.thumb ? <img src={p.thumb} alt="" /> : <span className="mono">{String(i + 1).padStart(2, '0')}</span>}
-                {p && <span className="slot-score"><GradeBadge g={p.grade} /></span>}
+          <div className="sec-head"><Title as="h3" light="Selected" bold="works" /><span className="eyebrow">{career.portfolio.length} of {career.maxCommissions}</span></div>
+          <div className="works-grid">
+            {slots.filter((p, i) => p || i === career.portfolio.length).map((p, i) => (
+              <button key={i} className={`work-slot ${p ? 'done' : i === career.portfolio.length ? 'next' : ''}`} onClick={() => p && onOpenWork(p)} disabled={!p}>
+                <span className="ws-img">{p?.thumb ? <img src={p.thumb} alt="" /> : <PerspectiveLines className="mini" />}</span>
+                <span className="ws-cap"><em>{String(i + 1).padStart(2, '0')}</em>{p ? <><b>{BRIEFS[p.briefId].name}</b><GradeBadge g={p.grade} /></> : <b className="dim">{i === career.portfolio.length ? 'Next commission' : '—'}</b>}</span>
               </button>
             ))}
           </div>
+          {career.maxCommissions - career.portfolio.length > 1 && <p className="dim small works-left">{career.maxCommissions - career.portfolio.length - 1} more commissions after this one, then retirement.</p>}
           <div className="row wrap hub-links">
-            <button className="ghost small" onClick={onUnlocks}><Icon name="lock" size={16} />Permanent unlocks · {meta.unlocked.length}</button>
-            <span className="dim small">Supplies owned: {career.packs.length ? career.packs.map(id => PACKS[id].name).join(', ') : 'none yet'}</span>
+            <button className="link-btn" onClick={onUnlocks}><Icon name="lock" size={14} />Permanent unlocks · {meta.unlocked.length}<Icon name="chevron" size={14} /></button>
+            <span className="dim small">Supplies: {career.packs.length ? career.packs.map(id => PACKS[id].name).join(', ') : 'none yet'}</span>
           </div>
         </section>
       </div>
       {openOffer && <OfferSheet offer={openOffer} meta={meta} onClose={() => setOpenOffer(null)} onAccept={() => { setOpenOffer(null); onAccept(openOffer.id) }} />}
       {confirmRetire && (
-        <div className="modal-wrap" onClick={() => setConfirmRetire(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <h3>Retire {career.name}?</h3>
+        <Window onClose={() => setConfirmRetire(false)} variant="dialog" label="Retire">
+          {(close) => (<>
+            <Title as="h3" light="Retire" bold={career.name} after="?" />
             <p className="dim">The career ends now and the portfolio goes to the legacy hall. Permanent unlocks stay for every architect; supplier packs and cash do not.</p>
-            <div className="row end"><button className="ghost" onClick={() => setConfirmRetire(false)}>Not yet</button><button className="primary" onClick={onRetire}>Retire</button></div>
-          </div>
-        </div>
+            <div className="row end"><button className="ghost" onClick={close}>Not yet</button><button className="primary" onClick={onRetire}>Retire</button></div>
+          </>)}
+        </Window>
       )}
     </div>
   )
@@ -286,66 +302,46 @@ export function Hub({ career, meta, onAccept, onResume, onHome, onRetire, onOpen
 
 const TAGS = { match: ['At your level', ''], safe: ['Safer job', 'safe'], stretch: ['Stretch', 'stretch'], basic: ['First job', ''], teaser: ['Score S to reach', 'teaser'] }
 
-function OfferTile({ offer, meta, onOpen }) {
-  const b = BRIEFS[offer.briefId]
-  const [tagLabel, tagClass] = TAGS[offer.tag] || TAGS.match
-  const best = meta.best?.[offer.briefId]
-  return (
-    <button className={`offer-tile ${offer.locked ? 'locked' : ''}`} onClick={onOpen}>
-      <ProjectArt briefId={offer.briefId} size={72} />
-      <span className="ot-body">
-        <span className="ot-top"><span className="tier-badge mono">LV {offer.level}</span><span className={`offer-tag ${tagClass}`}>{tagLabel}</span>{offer.twist && <Icon name="info" size={14} className="ot-twist" />}</span>
-        <b>{b.name}</b>
-        <span className="mono dim">{money(offer.budget, true)} · {offer.lot.w}×{offer.lot.h} m{best ? ' · best ' : ''}{best && <GradeBadge g={best} />}</span>
-      </span>
-      {offer.locked ? <Icon name="lock" size={18} className="ot-go" /> : <Icon name="chevron" size={18} className="ot-go" />}
-    </button>
-  )
-}
-
 function OfferSheet({ offer, meta, onClose, onAccept }) {
   const b = BRIEFS[offer.briefId]
   const tw = offer.twist ? TWISTS[offer.twist] : null
   const [tagLabel, tagClass] = TAGS[offer.tag] || TAGS.match
   const best = meta.best?.[offer.briefId]
-  const roomsList = b.rooms.map(r => `${r.count > 1 ? `${r.count}× ` : ''}${ROOMS[r.type].label} ≥ ${r.min} m²`)
-  const itemsN = b.items.reduce((s, it) => s + (it.count || 1), 0)
+  const words = b.name.split(' ')
   return (
-    <div className="sheet-wrap" onClick={onClose}>
-      <div className="sheet offer-sheet" onClick={e => e.stopPropagation()} role="dialog" aria-label={b.name}>
-        <div className="os-hero">
-          <ProjectArt briefId={offer.briefId} size={112} />
-          <div>
-            <span className="row"><span className="tier-badge mono">LEVEL {offer.level}</span><span className={`offer-tag ${tagClass}`}>{tagLabel}</span></span>
-            <h3>{b.name}</h3>
+    <Window onClose={onClose} label={b.name} className="offer-win">
+      {(close) => (<>
+        <div className="ow-hero">
+          <Diamond><ProjectArt briefId={offer.briefId} size={240} className="fill" /></Diamond>
+          <div className="ow-head">
+            <span className="eyebrow">Level {String(offer.level).padStart(2, '0')} · {INDUSTRIES[b.industry].label}</span>
+            <Title as="h2" light={words.slice(0, -1).join(' ')} bold={words.at(-1)} />
             <p className="client">{offer.client}</p>
-            <span className="mono dim ind"><Icon name={INDUSTRIES[b.industry].icon} size={14} /> {INDUSTRIES[b.industry].label}{best && <> · your studio's best <GradeBadge g={best} /></>}</span>
+            <span className="row wrap"><span className={`offer-tag ${tagClass}`}>{tagLabel}</span>{offer.styles.map(st => <span key={st} className="tag-chip">{STYLES[st]}</span>)}{best && <span className="dim small">best <GradeBadge g={best} /></span>}</span>
           </div>
-          <button className="icon-btn os-close" onClick={onClose} aria-label="Close"><Icon name="x" /></button>
         </div>
-        <div className="sheet-body">
+        <div className="ow-body">
           <p className="blurb">{b.blurb}</p>
-          <div className="os-facts">
-            <div><span className="mono dim">BUDGET</span><b>{money(offer.budget, true)}</b></div>
-            <div><span className="mono dim">FEE AT S</span><b>{money(Math.round(feeFor(offer.level) * 1.6 * (tw?.fee || 1)), true)}</b></div>
-            <div><span className="mono dim">LOT</span><b>{offer.lot.w}×{offer.lot.h} m</b></div>
-            <div><span className="mono dim">FLOORS</span><b>{b.levels.min === b.levels.max ? b.levels.min : `${b.levels.min}–${b.levels.max}`}</b></div>
+          <div className="ow-facts">
+            <div><Num n={1} /><span className="eyebrow">Budget</span><b className="display-num">{money(offer.budget, true)}</b></div>
+            <div><Num n={2} /><span className="eyebrow">Fee at S</span><b className="display-num">{money(Math.round(feeFor(offer.level) * 1.6 * (tw?.fee || 1)), true)}</b></div>
+            <div><Num n={3} /><span className="eyebrow">Lot</span><b className="display-num">{offer.lot.w}×{offer.lot.h}</b></div>
+            <div><Num n={4} /><span className="eyebrow">Floors</span><b className="display-num">{b.levels.min === b.levels.max ? b.levels.min : `${b.levels.min}–${b.levels.max}`}</b></div>
           </div>
-          <div className="row wrap"><span className="mono dim">CLIENT TASTE</span>{offer.styles.map(st => <span key={st} className="tag-chip">{STYLES[st]}</span>)}</div>
           {tw && <div className="twist"><b>{tw.name}</b><span>{tw.text}</span></div>}
           <div className="os-program">
-            <span className="mono dim">PROGRAM</span>
-            <ul>{roomsList.map((t, i) => <li key={i}>{t}</li>)}</ul>
-            <span className="dim small">{itemsN} required pieces of furniture and equipment{b.needsLift && b.levels.max > 1 ? ' · lift required' : ''}</span>
+            <span className="eyebrow">Program</span>
+            <ul>{b.rooms.map((r, i) => <li key={i}>{r.count > 1 ? `${r.count}× ` : ''}{ROOMS[r.type].label} <em>≥ {r.min} m²</em></li>)}</ul>
+            <span className="dim small">{b.items.reduce((n, it) => n + (it.count || 1), 0)} required pieces of furniture and equipment{b.needsLift && b.levels.max > 1 ? ' · lift required' : ''}</span>
           </div>
         </div>
-        <div className="os-foot">
+        <div className="ow-foot">
           {offer.locked
             ? <span className="locked-note"><Icon name="lock" size={16} />Score S on your next project to reach this level</span>
-            : <button className="primary big" onClick={() => { feedback('stamp'); onAccept() }}><Icon name="stamp" size={18} />Accept project</button>}
+            : <><button className="ghost" onClick={close}>Not now</button><button className="primary big" onClick={() => { feedback('stamp'); onAccept() }}><Icon name="stamp" size={18} />Accept project</button></>}
         </div>
-      </div>
-    </div>
+      </>)}
+    </Window>
   )
 }
 
@@ -357,7 +353,7 @@ export function Shop({ career, onBuy, onBack }) {
       <header className="page-top"><button className="icon-btn" onClick={onBack} aria-label="Back"><Icon name="back" /></button><Brand small /><span className="cash-pill mono">{money(career.cash)}</span></header>
       <div className="page-body">
         <div>
-          <h2>Supplier catalogue</h2>
+          <Title as="h2" light="Supplier" bold="catalogue" />
           <p className="dim">Packs unlock finishes, decor, lighting and studio services for <b>{career.name}</b> only. Fees from every passed project top up your cash.</p>
         </div>
         {kinds.map(k => (
@@ -395,7 +391,7 @@ export function Unlocks({ meta, onBack }) {
       <header className="page-top"><button className="icon-btn" onClick={onBack} aria-label="Back"><Icon name="back" /></button><Brand small /><span className="mono dim">{meta.unlocked.length}/{all.length}</span></header>
       <div className="page-body">
         <div>
-          <h2>Permanent unlocks</h2>
+          <Title as="h2" light="Permanent" bold="unlocks" />
           <p className="dim">Grades unlock pieces for that industry, for every architect from now on. <b>C</b> passes, <b>B</b> unlocks the basics, <b>A</b> the advanced pieces, <b>S</b> the special category.</p>
         </div>
         {Object.entries(INDUSTRIES).map(([ind, info]) => {
@@ -468,7 +464,7 @@ export function Review({ entry, career, onContinue, onRetry, onAbandon }) {
           </div>
           <div className="review-head">
             <span className="mono dim">REVIEW · {entry.client.toUpperCase()} · LEVEL {b.level}</span>
-            <div className="row"><ProjectArt briefId={entry.briefId} size={44} /><h2>{b.name}</h2></div>
+            <Title as="h2" light={b.name.split(' ').slice(0, -1).join(' ')} bold={b.name.split(' ').at(-1)} />
             <div className="big-score">
               <span className={`grade-reveal ${revealed ? 'in' : ''}`}><GradeBadge g={entry.grade} big /></span>
               <div><span className="num mono" aria-label={`${s.overall} out of 100`}>{count}</span><b>{grade.label}</b></div>
@@ -549,7 +545,7 @@ export function CareerEnd({ career, title, onArchive }) {
       <header className="page-top"><span /><Brand small /><span /></header>
       <div className="page-body">
         <span className="mono dim">{head}</span>
-        <h2>{career.name}</h2>
+        <h1 className="display-xl">{career.name}</h1>
         <p className="lead">“{title}”</p>
         <div className="end-stats">
           <div><span className="mono dim">COMMISSIONS</span><b>{n}</b></div>
@@ -584,7 +580,7 @@ export function Legacy({ meta, onBack }) {
     <div className="page">
       <header className="page-top"><button className="icon-btn" onClick={onBack} aria-label="Back"><Icon name="back" /></button><Brand small /><span /></header>
       <div className="page-body">
-        <h2>Legacy hall</h2>
+        <Title as="h2" light="Legacy" bold="hall" />
         {!meta.legacy.length && <p className="dim">No architect has finished a career yet. Yours will be the first plaque on the wall.</p>}
         {meta.legacy.map(l => (
           <section key={l.id} className="plaque">
@@ -606,8 +602,8 @@ export function WorkModal({ work, onClose }) {
   const [lvl, setLvl] = useState(0)
   const views = p ? [['exterior', 'Exterior', 'cube'], ['cutaway', 'Cutaway', 'section'], ['plan', 'Plan', 'plan'], ['night', 'Night', 'moon']] : []
   return (
-    <div className="modal-wrap" onClick={onClose}>
-      <div className="modal work-modal" onClick={e => e.stopPropagation()}>
+    <Window onClose={onClose} className="work-win" label={BRIEFS[work.briefId].name}>
+      {(close) => (<>
         <div className="work-3d">
           {!p ? <img src={work.thumb} alt="" />
             : view === 'plan' ? <PlanView project={p} li={lvl} tool="select" onTap={() => {}} />
@@ -626,8 +622,7 @@ export function WorkModal({ work, onClose }) {
           <div className="row"><GradeBadge g={work.grade} /><b className="mono">{work.scores.overall}</b></div>
         </div>
         <div className="row mono dim small wrap"><span>F {work.scores.functionality}</span><span>R {work.scores.requirements}</span><span>A {work.scores.aesthetics}</span><span>B {work.scores.budget ?? '–'}</span><span>+{money(work.fee || 0, true)}</span></div>
-        <div className="row end"><button className="ghost" onClick={onClose}>Close</button></div>
-      </div>
-    </div>
+      </>)}
+    </Window>
   )
 }
