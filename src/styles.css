@@ -1152,3 +1152,22 @@ h3.title-pair { font-size: 19px; margin: 0; letter-spacing: -.01em; }
 .win { overflow-x: hidden; }
 .ow-head { min-width: 0; }
 .ow-head .title-pair { overflow-wrap: anywhere; }
+
+/* --- portraits, pack boards */
+.avatar { position: relative; flex: none; display: inline-grid; place-items: center; overflow: visible; background: var(--panel3); color: var(--text); box-shadow: 0 0 0 3px var(--panel), var(--shadow-1); }
+.avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
+.avatar-flag { position: absolute; right: -4px; bottom: -2px; line-height: 1; filter: drop-shadow(0 1px 2px #0005); }
+.studio-id { display: flex; gap: 18px; align-items: flex-end; }
+@media (max-width: 520px) { .studio-id { gap: 12px; } .studio-id .avatar { width: 64px !important; height: 64px !important; } }
+.avatar-pick { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+@media (min-width: 700px) { .avatar-pick { grid-template-columns: repeat(12, 1fr); } }
+.ap { aspect-ratio: 1; border-radius: 50%; overflow: hidden; padding: 0; background: var(--panel3); box-shadow: 0 0 0 2px transparent; transition: transform .25s var(--ease), box-shadow .25s var(--ease), filter .25s; filter: grayscale(.2) brightness(.97); }
+.ap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ap:hover { transform: translateY(-2px); }
+.ap.on { box-shadow: 0 0 0 3px var(--panel), 0 0 0 5px var(--ink); filter: none; transform: scale(1.06); }
+.pack { padding: 10px 10px 14px; gap: 10px; }
+.pack-img { display: block; aspect-ratio: 1.6; border-radius: 14px; overflow: hidden; background: var(--panel2); }
+.pack-img img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .6s var(--ease); }
+.pack:hover .pack-img img { transform: scale(1.04); }
+.pack > :not(.pack-img) { margin: 0 4px; }
+.pack.owned .pack-img { box-shadow: inset 0 0 0 2px var(--ok); }

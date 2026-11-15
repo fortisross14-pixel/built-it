@@ -41,3 +41,6 @@ export function bgOf(kit = []) {
   const id = kit.find(k => k.startsWith('bg:'))?.slice(3)
   return BACKGROUNDS[id] || null
 }
+
+// Portraits: white plaster busts in public/art/architects/a01..a12.jpg
+export const AVATARS = Array.from({ length: 12 }, (_, i) => `a${String(i + 1).padStart(2, '0')}`)

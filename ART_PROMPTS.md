@@ -56,3 +56,10 @@ Use this style prefix for every prompt, then add the subject:
 | 22 | `grandMuseum.png` | grand national museum with a classical colonnade |
 | 23 | `arena.png` | indoor sports arena |
 | 24 | `airport.png` | regional airport terminal with a jet bridge and a small plane |
+
+## Other art sets (already in the game)
+
+| Set | Source grid | Slice command | Output |
+|---|---|---|---|
+| Architect portraits (12 plaster busts) | `art-source/architects-grid.png` (6 × 2) | `node scripts/slice-art.cjs art-source/architects-grid.png architects` | `public/art/architects/a01–a12.jpg` |
+| Supplier pack boards (19) | `art-source/packs-grid.png` (5 × 4, last tile empty) | `node scripts/slice-art.cjs art-source/packs-grid.png packs` | `public/art/packs/<packId>.jpg` |

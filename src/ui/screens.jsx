@@ -8,7 +8,8 @@ import { INDUSTRIES, ITEMS, MATERIALS, ROOMS, STYLES } from '../game/catalog.js'
 import { PACKS, packContents } from '../game/packs.js'
 import { MAX_LEVEL, RANKS, feeFor, randomArchitect, rankFor } from '../engine/career.js'
 import { referenceCafe } from '../game/demo.js'
-import { BACKGROUNDS, COUNTRIES, GENDERS, countryName, flag } from '../game/architects.js'
+import { AVATARS, BACKGROUNDS, COUNTRIES, GENDERS, countryName, flag } from '../game/architects.js'
+import Avatar from './Avatar.jsx'
 import ProjectArt from './ProjectArt.jsx'
 import { Diamond, Num, PerspectiveLines, Title, WaveMesh, Window } from './deco.jsx'
 import PlanView from './PlanView.jsx'
@@ -106,6 +107,7 @@ export function NewCareer({ meta, onStart, onBack, warnReplace }) {
   const [gender, setGender] = useState('Prefer not to say')
   const [country, setCountry] = useState('')
   const [background, setBackground] = useState('architect')
+  const [avatar, setAvatar] = useState(() => AVATARS[Math.floor(Math.random() * AVATARS.length)])
   return (
     <div className="page">
       <header className="page-top"><button className="icon-btn" onClick={onBack} aria-label="Back"><Icon name="back" /></button><Brand small /><span /></header>
@@ -114,8 +116,18 @@ export function NewCareer({ meta, onStart, onBack, warnReplace }) {
         <span className="eyebrow">Architect no. {String(meta.careers + 1).padStart(2, '0')}</span>
         <Title as="h2" light="Who's opening" bold="the studio?" />
         {warnReplace && <p className="warn">Your current architect's career will end and go to the legacy hall.</p>}
+        <div className="field">
+          <span className="eyebrow">Portrait</span>
+          <div className="avatar-pick">
+            {AVATARS.map(id => (
+              <button key={id} className={`ap ${avatar === id ? 'on' : ''}`} onClick={() => { feedback('tap'); setAvatar(id) }} aria-label={`Portrait ${id}`}>
+                <img src={`${import.meta.env.BASE_URL}art/architects/${id}.jpg`} alt="" loading="lazy" />
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="profile-card">
-          <div className="avatar big">{name.split(' ').map(x => x[0]).join('').slice(0, 2)}<span className="avatar-flag">{flag(country)}</span></div>
+          <Avatar name={name} profile={{ avatar, country }} size={96} className="big" />
           <div className="profile-fields">
             <label className="field">
               <span className="mono dim">NAME</span>
@@ -162,7 +174,7 @@ export function NewCareer({ meta, onStart, onBack, warnReplace }) {
           <div><Icon name="lock" /><b>{meta.unlocked.length} permanent unlocks</b><span>Everything earlier architects unlocked with B, A and S grades is yours from day one.</span></div>
         </div>
         <div className="sticky-cta">
-          <button className="primary big" disabled={!name.trim()} onClick={() => onStart({ name: name.trim(), profile: { age, gender, country, background } })}><Icon name="building" size={18} />Open studio</button>
+          <button className="primary big" disabled={!name.trim()} onClick={() => onStart({ name: name.trim(), profile: { age, gender, country, background, avatar } })}><Icon name="building" size={18} />Open studio</button>
         </div>
       </div>
     </div>
@@ -205,8 +217,13 @@ export function Hub({ career, meta, onAccept, onResume, onHome, onRetire, onOpen
       <div className="page-body">
         <section className="studio-head">
           <WaveMesh className="tr" />
-          <span className="eyebrow">Studio of</span>
-          <h1 className="display-xl">{career.name}</h1>
+          <div className="studio-id">
+            <Avatar name={career.name} profile={prof} size={92} />
+            <div>
+              <span className="eyebrow">Studio of</span>
+              <h1 className="display-xl">{career.name}</h1>
+            </div>
+          </div>
           <p className="studio-meta">
             {prof.country && <span>{flag(prof.country)} {countryName(prof.country)}</span>}
             {prof.age && <span>{prof.age}</span>}
@@ -366,6 +383,7 @@ export function Shop({ career, onBuy, onBack }) {
                 const contents = packContents(id)
                 return (
                   <article key={id} className={`pack ${owned ? 'owned' : ''}`}>
+                    <span className="pack-img"><img src={`${import.meta.env.BASE_URL}art/packs/${id}.jpg`} alt="" loading="lazy" onError={(e) => { e.currentTarget.parentElement.style.display = 'none' }} /></span>
                     <div className="pack-head"><b>{p.name}</b><span className="mono">{money(p.price, true)}</span></div>
                     <p className="dim small">{p.text}</p>
                     {contents.length > 0 && <p className="pack-list mono">{contents.join(' · ')}</p>}
@@ -585,7 +603,7 @@ export function Legacy({ meta, onBack }) {
         {meta.legacy.map(l => (
           <section key={l.id} className="plaque">
             <div className="plaque-head">
-              <div><h3>{l.profile?.country ? `${flag(l.profile.country)} ` : ''}{l.name}</h3><p className="dim">“{l.title}” · {l.rank}{l.profile?.background ? ` · ${BACKGROUNDS[l.profile.background]?.label}` : ''}</p></div>
+              <div className="row"><Avatar name={l.name} profile={l.profile || {}} size={52} /><div><h3>{l.name}</h3><p className="dim">“{l.title}” · {l.rank}{l.profile?.background ? ` · ${BACKGROUNDS[l.profile.background]?.label}` : ''}</p></div></div>
               <div className="plaque-stats mono"><span>{l.commissions} works</span><span>avg {l.average}</span><span>top L{l.topLevel ?? '–'}</span><span className={l.status !== 'retired' ? 'bad' : ''}>{l.status}</span></div>
             </div>
             <Portfolio works={l.works} />
