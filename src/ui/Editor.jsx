@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import Icon from './icons.jsx'
 import PlanView, { ItemSymbol } from './PlanView.jsx'
 import View3D from './View3D.jsx'
-import { CEILINGS, DOORS, FAMILIES, INDUSTRIES, ITEMS, MATERIALS, PAINTS, QUALITY, ROOMS, STYLES, familyOf, isDecorLayer, itemCost, itemSize, materialsOfKind } from '../game/catalog.js'
+import { CEILINGS, DOORS, FAMILIES, INDUSTRIES, ITEMS, itemLabel, productsFor, MATERIALS, PAINTS, QUALITY, ROOMS, STYLES, familyOf, isDecorLayer, itemCost, itemSize, materialsOfKind } from '../game/catalog.js'
 import { BRIEFS, TWISTS } from '../game/briefs.js'
 import { available, lockReason } from '../game/packs.js'
 import {
@@ -148,9 +148,12 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
     setTool(t.id)
     if (t.catalog) setCatalog(t.id)
   }
+  // First product line this architect may use (drinks chillers etc. can be locked).
+  const productOk = (type, pid) => { const pd = productsFor(type)?.[pid]; return !!pd && available(pd, `${type}:${pid}`, ctx) }
+  const firstProduct = (type) => { const ps = productsFor(type); return ps ? Object.keys(ps).find(pid => productOk(type, pid)) : undefined }
   const pickFromCatalog = (kind, type) => {
     feedback('select')
-    setPlacing({ kind, type })
+    setPlacing({ kind, type, product: kind === 'item' ? firstProduct(type) : undefined })
     setCatalog(null)
     if (kind === 'room') setTool('room')
   }
@@ -216,7 +219,7 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
     if (p === project && last) say(last, 'error')
     else commit(p, null, 'opening')
   }
-  const handleDrop = (o) => { if (itemType) commit(placeItem(project, li, { type: itemType, rot: itemRot, q: quality, ...o })) }
+  const handleDrop = (o) => { if (itemType) commit(placeItem(project, li, { type: itemType, rot: itemRot, q: quality, ...(placing?.product ? { product: placing.product } : {}), ...o })) }
   const handleMove = (id, o) => commit(moveItem(project, li, id, o))
 
   const selRoom = selection?.kind === 'room' ? level.rooms.find(r => r.id === selection.id) : null
@@ -298,7 +301,7 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
     if (placing3D) {
       if (ITEMS[placing3D].site && li !== 0) return say('Landscaping goes on the ground level.')
       const o = originAt(p, placing3D), sz = itemSize({ type: placing3D, rot: itemRot })
-      if (commit(placeItem(project, li, { type: placing3D, rot: itemRot, q: quality, ...o }))) setPulse({ x: o.x + sz.w / 2, y: o.y + sz.h / 2, w: sz.w, h: sz.h, li, ceiling: ITEMS[placing3D].ceiling, id: Date.now() })
+      if (commit(placeItem(project, li, { type: placing3D, rot: itemRot, q: quality, ...(placing?.product ? { product: placing.product } : {}), ...o }))) setPulse({ x: o.x + sz.w / 2, y: o.y + sz.h / 2, w: sz.w, h: sz.h, li, ceiling: ITEMS[placing3D].ceiling, id: Date.now() })
       return
     }
     if (tool === 'look') {
@@ -354,13 +357,15 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
   if (selItem) {
     palette = <ItemInspector item={selItem}
       onQuality={(v) => commit(moveItem(project, li, selItem.id, { q: v }), null, 'select')}
+      onProduct={(pid) => productOk(selItem.type, pid) ? commit(moveItem(project, li, selItem.id, { product: pid }), null, 'select') : say(lockReason(productsFor(selItem.type)[pid]))}
+      productOk={(pid) => productOk(selItem.type, pid)}
       onRotate={() => commit(moveItem(project, li, selItem.id, { rot: (selItem.rot + 1) % 2 }), null, 'select')}
       onDelete={() => { commit(removeItem(project, li, selItem.id), null, 'remove'); setSelection(null) }} onClose={() => setSelection(null)} />
   } else if (layer === 'decorate' && selRoom) {
     palette = <RoomFinishInspector room={selRoom} ctx={ctx} styles={offer.styles} say={say} onClose={() => setSelection(null)}
       onPatch={(patch) => commit(updateRoom(project, li, selRoom.id, patch), null, 'paint')} />
   } else if (placing) {
-    palette = <div className="palette"><p className="hint">{placing.kind === 'room' ? HINTS.placingRoom : HINTS.placing}</p></div>
+    palette = <div className="palette"><div className="tabs"><span className="hint grow">{placing.kind === 'room' ? HINTS.placingRoom : productsFor(placing.type) ? 'Pick the product in the bar above. Group a department together and put displays next to their racks.' : HINTS.placing}</span><div className="tabs-extra">{placing.kind === 'item' && qualityBar}</div></div></div>
   } else if (tool === 'floor') {
     palette = <SwatchPalette label="FLOOR" items={materialsOfKind('floor')} value={floorMat} ctx={ctx} styles={offer.styles} say={say} onPick={setFloorMat} extra={qualityBar} hint="Pick a floor and quality, then tap rooms." />
   } else if (tool === 'paint') {
@@ -447,11 +452,15 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
             <button className="placing-what" onClick={() => setCatalog(placing.kind === 'room' ? 'room' : tool)} aria-label="Change item">
               {placing.kind === 'room'
                 ? <i className="sw lg" style={{ background: ROOMS[placing.type].color }} />
-                : <svg viewBox={`-0.2 -0.2 ${placingDef.w + 0.4} ${placingDef.h + 0.4}`} className="item-ico"><ItemSymbol type={placing.type} w={placingDef.w} h={placingDef.h} /></svg>}
+                : <svg viewBox={`-0.2 -0.2 ${placingDef.w + 0.4} ${placingDef.h + 0.4}`} className="item-ico"><ItemSymbol type={placing.type} w={placingDef.w} h={placingDef.h} product={placing.product} /></svg>}
               <span><em className="mono">PLACING</em><b>{placing.kind === 'room' ? ROOMS[placing.type].label : placingDef.label}</b></span>
               <Icon name="chevron" size={14} />
             </button>
-            {placing.kind === 'item' && <QualityPicker value={quality} onChange={setQuality} compact />}
+            {placing.kind === 'item' && productsFor(placing.type) && (
+              <ProductPicker type={placing.type} value={placing.product} ok={(pid) => productOk(placing.type, pid)}
+                onPick={(pid) => productOk(placing.type, pid) ? (feedback('tap'), setPlacing(pl => ({ ...pl, product: pid }))) : say(lockReason(productsFor(placing.type)[pid]))} />
+            )}
+            {placing.kind === 'item' && !productsFor(placing.type) && <QualityPicker value={quality} onChange={setQuality} compact />}
             {placing.kind === 'item' && placingDef.w !== placingDef.h && <button className="chip rot" onClick={() => setItemRot(r => (r + 1) % 2)} aria-label="Rotate"><Icon name="rotate" size={16} /></button>}
             <button className="stop-x" onClick={stopPlacing} aria-label="Stop placing"><Icon name="x" size={20} stroke={2.6} /></button>
           </div>
@@ -542,7 +551,7 @@ function CatalogSheet({ kind, brief, ctx, result, showAll, setShowAll, onPick, o
     sections = [['Required by the brief', required], ...Object.entries(groups)].filter(([, ids]) => ids.length).map(([name, ids]) => [name, ids.map(id => ({ id }))])
   }
   const roomStatus = (t) => result.checklist.filter(c => c.kind === 'room' && c.type === t)
-  const itemStatus = (id) => result.checklist.find(c => c.kind === 'item' && c.type === id) || result.checklist.find(c => c.kind === 'item' && c.family && c.family === familyOf(id))
+  const itemStatus = (id) => result.checklist.find(c => c.kind === 'item' && c.type === id && !c.product) || result.checklist.find(c => c.kind === 'item' && c.type === id) || result.checklist.find(c => c.kind === 'item' && c.family && c.family === familyOf(id))
   return (
     <div className="sheet-wrap" onClick={onClose}>
       <div className="sheet" onClick={e => e.stopPropagation()} role="dialog" aria-label={title}>
@@ -579,7 +588,7 @@ function CatalogSheet({ kind, brief, ctx, result, showAll, setShowAll, onPick, o
                     <button key={id} className={`cat-card ${open ? '' : 'locked'}`} onClick={() => open ? onPick('item', id) : say(lockReason(def))}>
                       <span className="cat-art"><svg viewBox={`-0.3 -0.3 ${def.w + 0.6} ${def.h + 0.6}`} className="item-ico"><ItemSymbol type={id} w={def.w} h={def.h} /></svg></span>
                       <b>{def.label}</b>
-                      <em className="mono">{money(def.cost, true)} · {def.w}×{def.h} m{def.boost ? ` · +${(def.boost.f || 0) + (def.boost.a || 0)}` : ''}</em>
+                      <em className="mono">{money(def.cost, true)} · {def.w}×{def.h} m{def.boost ? ` · +${(def.boost.f || 0) + (def.boost.a || 0)}` : ''}{def.products ? ` · ${Object.keys(productsFor(id)).length} products` : ''}</em>
                       {st && open && <span className={`cat-req ${st.ok ? 'ok' : ''}`}>{st.detail}</span>}
                       {!open && <span className={`cat-lock ${def.pack ? 'pack' : `g-${def.unlock}`}`}><Icon name="lock" size={11} />{def.pack ? 'Pack' : UNLOCK_LABEL[def.unlock]}</span>}
                     </button>
@@ -671,17 +680,31 @@ function RoomFinishInspector({ room, ctx, styles, say, onPatch, onClose }) {
   )
 }
 
-function ItemInspector({ item, onQuality, onRotate, onDelete, onClose }) {
+export function ProductPicker({ type, value, ok, onPick }) {
+  const ps = productsFor(type)
+  return (
+    <div className="products" role="radiogroup" aria-label="Product">
+      {Object.entries(ps).map(([pid, pd]) => (
+        <button key={pid} className={`prod ${value === pid ? 'on' : ''} ${ok(pid) ? '' : 'locked'}`} role="radio" aria-checked={value === pid} onClick={() => onPick(pid)}>
+          <i style={{ background: pd.color }} />{pd.label}{!ok(pid) && <Icon name="lock" size={11} />}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function ItemInspector({ item, onQuality, onRotate, onDelete, onClose, onProduct, productOk }) {
   const def = ITEMS[item.type]
   return (
     <div className="palette inspector">
       <div className="insp-head">
-        <strong>{def.label}</strong>
+        <strong>{itemLabel(item)}</strong>
         <span className="mono dim">{money(itemCost(item))}{isDecorLayer(item.type) ? '' : ' · drag to move'}</span>
         <button className="chip" onClick={onRotate}><Icon name="rotate" size={16} /><span className="hide-xs">Rotate</span></button>
         <button className="icon-btn danger" onClick={onDelete} aria-label="Delete item"><Icon name="trash" size={18} /></button>
         <button className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="x" size={18} /></button>
       </div>
+      {productsFor(item.type) && <div className="row"><span className="mono dim">PRODUCT</span><ProductPicker type={item.type} value={item.product || Object.keys(productsFor(item.type))[0]} ok={productOk} onPick={onProduct} /></div>}
       <div className="row"><span className="mono dim">QUALITY</span><QualityPicker value={item.q ?? 1} onChange={onQuality} /></div>
       <p className="hint">{['Basic: cheap, but staff and critics notice.', 'Standard: solid and sensible.', 'Premium: lifts Functionality and Aesthetics, at twice the price.'][item.q ?? 1]}</p>
     </div>

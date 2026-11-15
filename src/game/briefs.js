@@ -1,4 +1,4 @@
-import { BASE_COST, FAMILIES, ITEMS } from './catalog.js'
+import { BASE_COST, FAMILIES, ITEMS, PRODUCTS } from './catalog.js'
 
 // Commission archetypes on a 1–10 difficulty ladder. Several industries climb their own
 // ladder (neighbourhood boutique → chain flagship → luxury maison), but the hardest shop is
@@ -12,7 +12,7 @@ export const BRIEFS = {
     blurb: 'A friendly corner shop for clothes: racks for everyone, a fitting room and a till.',
     lot: { w: 16, h: 12 }, levels: { min: 1, max: 1 },
     rooms: [{ type: 'sales', min: 30 }, { type: 'fitting', min: 3, count: 2 }, { type: 'storage', min: 5 }, { type: 'wc', min: 3 }],
-    items: [{ family: 'rack', count: 4 }, { type: 'rackWomen' }, { type: 'rackMen' }, { type: 'checkout' }, { type: 'mirror', in: 'fitting' }, { type: 'shelving', in: 'storage' }, { type: 'toilet' }],
+    items: [{ type: 'rack', count: 4 }, { type: 'rack', product: 'women' }, { type: 'rack', product: 'men' }, { type: 'checkout' }, { type: 'mirror', in: 'fitting' }, { type: 'shelving', in: 'storage' }, { type: 'toilet' }],
     adj: [['sales', 'fitting'], ['sales', 'storage']],
     styles: ['minimal', 'playful', 'warm', 'industrial'],
     clients: ['Thread Theory', 'Second Skin', 'Loom & Co.', 'Hem Street'],
@@ -32,7 +32,7 @@ export const BRIEFS = {
     blurb: 'Fresh produce, milk, snacks and a friendly till. Every neighbourhood needs one.',
     lot: { w: 16, h: 14 }, levels: { min: 1, max: 1 },
     rooms: [{ type: 'market', min: 40 }, { type: 'storage', min: 8 }, { type: 'wc', min: 3 }],
-    items: [{ type: 'fridgeProduce' }, { type: 'fridgeDairy' }, { type: 'shelfProduce' }, { type: 'shelfSnacks' }, { type: 'shelfCondiments' }, { type: 'checkout' }, { type: 'shelving', in: 'storage' }, { type: 'toilet' }],
+    items: [{ type: 'chiller', product: 'produce' }, { type: 'chiller', product: 'dairy' }, { type: 'aisle', product: 'produce' }, { type: 'aisle', product: 'snacks' }, { type: 'aisle', product: 'condiments' }, { type: 'checkout' }, { type: 'shelving', in: 'storage' }, { type: 'toilet' }],
     adj: [['market', 'storage']],
     styles: ['warm', 'eco', 'playful', 'heritage'],
     clients: ['Mama Rosa Market', 'The Green Grocer', 'Corner Fresh', 'Ali\'s Store'],
@@ -53,7 +53,7 @@ export const BRIEFS = {
     blurb: 'High volume, quick turnover: wide aisles, lots of racks, a fitting-room bank and fast tills.',
     lot: { w: 20, h: 14 }, levels: { min: 1, max: 1 },
     rooms: [{ type: 'sales', min: 70 }, { type: 'fitting', min: 3, count: 3 }, { type: 'storage', min: 10 }, { type: 'wc', min: 3 }],
-    items: [{ family: 'rack', count: 8 }, { type: 'rackWomen', count: 2 }, { type: 'rackMen', count: 2 }, { type: 'rackKids' }, { type: 'checkout', count: 2 }, { type: 'mirror', count: 2 }, { type: 'display' }],
+    items: [{ type: 'rack', count: 8 }, { type: 'rack', product: 'women', count: 2 }, { type: 'rack', product: 'men', count: 2 }, { type: 'rack', product: 'kids' }, { type: 'checkout', count: 2 }, { type: 'mirror', count: 2 }, { type: 'display' }],
     adj: [['sales', 'fitting'], ['sales', 'storage']],
     styles: ['playful', 'minimal', 'industrial', 'corporate'],
     clients: ['Zippa', 'NowNow', 'Hype Lane', 'Trend Republic'],
@@ -84,7 +84,7 @@ export const BRIEFS = {
     blurb: 'A proper weekly shop: produce, meat, dairy, long aisles, a cold room and a bank of tills.',
     lot: { w: 26, h: 18 }, levels: { min: 1, max: 1 },
     rooms: [{ type: 'market', min: 160 }, { type: 'coldroom', min: 12 }, { type: 'storage', min: 20 }, { type: 'office', min: 8 }, { type: 'wc', min: 3, count: 2 }],
-    items: [{ type: 'fridgeProduce', count: 2 }, { type: 'fridgeMeat', count: 2 }, { type: 'fridgeDairy', count: 2 }, { type: 'shelfProduce', count: 3 }, { type: 'shelfSnacks', count: 3 }, { type: 'shelfCondiments', count: 3 }, { type: 'checkout', count: 3 }, { type: 'fridge', in: 'coldroom' }, { type: 'toilet', count: 2 }],
+    items: [{ type: 'chiller', product: 'produce', count: 2 }, { type: 'chiller', product: 'meat', count: 2 }, { type: 'chiller', product: 'dairy', count: 2 }, { type: 'chiller', product: 'frozen', count: 2 }, { type: 'aisle', product: 'produce', count: 3 }, { type: 'aisle', product: 'snacks', count: 3 }, { type: 'aisle', product: 'condiments', count: 3 }, { type: 'checkout', count: 3 }, { type: 'fridge', in: 'coldroom' }, { type: 'toilet', count: 2 }],
     adj: [['market', 'coldroom'], ['market', 'storage']],
     styles: ['eco', 'minimal', 'warm', 'corporate'],
     clients: ['FreshWay', 'Basket & Co.', 'Daily Harvest', 'Mercato Verde'],
@@ -125,7 +125,7 @@ export const BRIEFS = {
     blurb: 'Two floors of a global brand: departments for women, men and kids, a lift and a fitting-room suite.',
     lot: { w: 24, h: 18 }, levels: { min: 2, max: 2 },
     rooms: [{ type: 'sales', min: 110, count: 2 }, { type: 'fitting', min: 3, count: 4 }, { type: 'storage', min: 16 }, { type: 'office', min: 8 }, { type: 'wc', min: 3, count: 2 }],
-    items: [{ family: 'rack', count: 14 }, { type: 'rackWomen', count: 4 }, { type: 'rackMen', count: 4 }, { type: 'rackKids', count: 3 }, { type: 'checkout', count: 3 }, { type: 'display', count: 3 }, { type: 'mirror', count: 4 }, { type: 'elevator' }, { type: 'stairs' }],
+    items: [{ type: 'rack', count: 14 }, { type: 'rack', product: 'women', count: 4 }, { type: 'rack', product: 'men', count: 4 }, { type: 'rack', product: 'kids', count: 3 }, { type: 'checkout', count: 3 }, { type: 'display', count: 3 }, { type: 'mirror', count: 4 }, { type: 'elevator' }, { type: 'stairs' }],
     adj: [['sales', 'fitting'], ['sales', 'storage']],
     styles: ['corporate', 'minimal', 'playful', 'luxe'],
     clients: ['Nordvik', 'Maison Global', 'Urban Thread Int.', 'KAIZEN Apparel'],
@@ -181,7 +181,7 @@ export const BRIEFS = {
     blurb: 'A couture house: a hushed shop floor, private salons, an atelier upstairs. Nothing is ordinary.',
     lot: { w: 22, h: 16 }, levels: { min: 2, max: 3 },
     rooms: [{ type: 'lobby', min: 14 }, { type: 'sales', min: 70, count: 2 }, { type: 'lounge', min: 16 }, { type: 'fitting', min: 6, count: 3 }, { type: 'office', min: 14 }, { type: 'storage', min: 10 }, { type: 'wc', min: 4 }],
-    items: [{ family: 'rack', count: 6 }, { type: 'rackWomen', count: 3 }, { type: 'rackMen', count: 2 }, { type: 'display', count: 4 }, { type: 'sofa', count: 3 }, { type: 'mirror', count: 3 }, { type: 'checkout' }, { type: 'elevator' }, { type: 'stairs' }],
+    items: [{ type: 'rack', count: 6 }, { type: 'rack', product: 'women', count: 3 }, { type: 'rack', product: 'men', count: 2 }, { type: 'display', count: 4 }, { type: 'sofa', count: 3 }, { type: 'mirror', count: 3 }, { type: 'checkout' }, { type: 'elevator' }, { type: 'stairs' }],
     adj: [['lobby', 'sales'], ['sales', 'fitting'], ['sales', 'lounge']],
     styles: ['luxe', 'heritage', 'minimal'],
     clients: ['Maison Vey', 'Atelier Noir', 'Casa Orsini', 'House of Ilse'],
@@ -204,7 +204,7 @@ export const BRIEFS = {
     blurb: 'A destination market on two floors: fresh counters, chilled halls, a café upstairs and deliveries that never cross the shoppers.',
     lot: { w: 32, h: 24 }, levels: { min: 2, max: 2 },
     rooms: [{ type: 'market', min: 200, count: 2 }, { type: 'seating', min: 50 }, { type: 'kitchen', min: 20 }, { type: 'coldroom', min: 20 }, { type: 'storage', min: 30 }, { type: 'office', min: 10 }, { type: 'wc', min: 4, count: 3 }],
-    items: [{ type: 'fridgeProduce', count: 3 }, { type: 'fridgeMeat', count: 3 }, { type: 'fridgeDairy', count: 3 }, { family: 'aisle', count: 10 }, { type: 'checkout', count: 4 }, { type: 'counter', count: 2 }, { family: 'tableFam', count: 8, in: 'seating' }, { type: 'oven' }, { type: 'elevator' }, { type: 'stairs' }, { type: 'toilet', count: 3 }],
+    items: [{ type: 'chiller', product: 'produce', count: 3 }, { type: 'chiller', product: 'meat', count: 3 }, { type: 'chiller', product: 'dairy', count: 3 }, { type: 'chiller', product: 'frozen', count: 3 }, { type: 'aisle', count: 10 }, { type: 'checkout', count: 4 }, { type: 'counter', count: 2 }, { family: 'tableFam', count: 8, in: 'seating' }, { type: 'oven' }, { type: 'elevator' }, { type: 'stairs' }, { type: 'toilet', count: 3 }],
     adj: [['market', 'coldroom'], ['market', 'storage'], ['seating', 'kitchen']],
     styles: ['warm', 'heritage', 'luxe', 'eco'],
     clients: ['Mercato Centrale', 'Halle Gourmande', 'The Pantry Hall', 'Borough Provisions'],
@@ -227,7 +227,7 @@ export const BRIEFS = {
     blurb: 'Eight shops, a food court and an atrium that makes people forget their phones for a minute.',
     lot: { w: 40, h: 30 }, levels: { min: 1, max: 2 },
     rooms: [{ type: 'atrium', min: 110 }, { type: 'shop', min: 36, count: 8 }, { type: 'foodcourt', min: 90 }, { type: 'storage', min: 20 }, { type: 'wc', min: 8, count: 2 }],
-    items: [{ type: 'counter', count: 11 }, { family: 'rack', count: 8, in: 'shop' }, { family: 'tableFam', count: 10, in: 'foodcourt' }, { type: 'toilet', count: 6 }, { type: 'elevator' }, { type: 'plant', count: 6 }],
+    items: [{ type: 'counter', count: 11 }, { type: 'rack', count: 8, in: 'shop' }, { family: 'tableFam', count: 10, in: 'foodcourt' }, { type: 'toilet', count: 6 }, { type: 'elevator' }, { type: 'plant', count: 6 }],
     adj: [['atrium', 'shop'], ['atrium', 'foodcourt']],
     styles: ['playful', 'luxe', 'corporate', 'minimal'],
     clients: ['Westfield Arc', 'Galleria Nova', 'Harbourside Retail', 'The Exchange'],
@@ -292,7 +292,9 @@ export const GRADE_RANK = { F: 0, C: 1, B: 2, A: 3, S: 4 }
 export function gradeFor(score) { return GRADES.find(g => score >= g.min) }
 
 export function reqLabel(req) {
-  return req.family ? FAMILIES[req.family] : ITEMS[req.type].label
+  if (req.family) return FAMILIES[req.family]
+  const p = req.product && PRODUCTS[ITEMS[req.type].products]?.[req.product]
+  return p ? `${ITEMS[req.type].label}: ${p.label}` : ITEMS[req.type].label
 }
 
 export function briefArea(brief) {

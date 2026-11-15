@@ -734,3 +734,16 @@ button:focus:not(:focus-visible) { outline: none; }
 .unlock-ind .sec-head { margin: 0; }
 .unlock-ind h3 { display: flex; gap: 8px; align-items: center; }
 .unlock-ind .grade { height: 15px; min-width: 15px; font-size: 9px; margin-left: 2px; }
+
+/* --- v0.9 products + merchandising */
+.products { display: flex; gap: 4px; flex-wrap: nowrap; overflow-x: auto; }
+.prod { display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 9px; border-radius: 16px; background: var(--panel2); border: 1px solid var(--line); font-size: 12px; white-space: nowrap; flex: none; transition: transform .15s, border-color .15s; }
+.prod i { width: 12px; height: 12px; border-radius: 50%; border: 1px solid #0004; }
+.prod.on { border-color: var(--accent); background: var(--accent-soft); color: #fff; }
+.prod.locked { opacity: .5; }
+.prod:active { transform: scale(.93); }
+@media (pointer: coarse) { .prod { height: 38px; } }
+.placing-bar .products { max-width: 46vw; }
+@media (max-width: 520px) { .placing-bar { flex-wrap: wrap; } .placing-bar .products { order: 5; max-width: 100%; flex-basis: 100%; } }
+.merch-link { stroke-width: .14; stroke-linecap: round; opacity: .75; pointer-events: none; }
+.merch-link.complement { stroke-dasharray: .25 .2; stroke-width: .12; }

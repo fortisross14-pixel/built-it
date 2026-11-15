@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ITEMS, MATERIALS, ROOMS, itemSize } from '../game/catalog.js'
+import { ITEMS, MATERIALS, PRODUCTS, ROOMS, itemSize } from '../game/catalog.js'
+import { merchandise } from '../engine/score.js'
 import { settings } from './fx.js'
 import { inRoom, labelPoint, nearestEdge, normRect, roomArea, roomOutline, roomRuns, wallEdges } from '../engine/plan.js'
 
@@ -218,6 +219,8 @@ export default function PlanView({
   })
 
   const edges = useMemo(() => [...wallEdges(level).values()], [level])
+  // Merchandising links: fixtures that work together (same department, or a display by its racks).
+  const merchLinks = useMemo(() => merchandise(level).links, [level])
   const doors = useMemo(() => new Set(level.doors), [level])
   const windows = useMemo(() => new Set(level.windows), [level])
   const below = li > 0 ? project.levels[li - 1] : null
@@ -305,6 +308,7 @@ export default function PlanView({
         {level.items.filter(it => ITEMS[it.type].overlay).map(it => <Item key={it.id} it={it} sel={selItem?.id === it.id} />)}
         {level.items.filter(it => !ITEMS[it.type].overlay).map(it => <Item key={it.id} it={it} sel={selItem?.id === it.id} />)}
 
+        {merchLinks.map((l, i) => <line key={`ml${i}`} x1={l.a.x} y1={l.a.y} x2={l.b.x} y2={l.b.y} className={`merch-link ${l.kind}`} style={{ stroke: l.color }} />)}
         {edges.map(e => {
           if (doors.has(e.key)) return <Door key={e.key} e={e} />
           if (windows.has(e.key)) return <Window key={e.key} e={e} />
@@ -409,14 +413,15 @@ function Item({ it, sel }) {
   const def = ITEMS[it.type]
   return (
     <g className={`item g-${def.group.toLowerCase()} ${def.overlay ? 'overlay' : ''} ${sel ? 'sel' : ''}`} transform={`translate(${it.x} ${it.y})`}>
-      <g className="item-pop"><ItemSymbol type={it.type} w={s.w} h={s.h} /></g>
+      <g className="item-pop"><ItemSymbol type={it.type} w={s.w} h={s.h} product={it.product} /></g>
       {sel && <rect width={s.w} height={s.h} className="sel-box" />}
     </g>
   )
 }
 
 // Plan symbols drawn in footprint space (w × h metres).
-export function ItemSymbol({ type, w, h }) {
+export function ItemSymbol({ type, w, h, product }) {
+  const pd = ITEMS[type]?.products ? (PRODUCTS[ITEMS[type].products][product] || Object.values(PRODUCTS[ITEMS[type].products])[0]) : null
   const i = 0.08
   const box = <rect x={i} y={i} width={w - i * 2} height={h - i * 2} className="sym" />
   switch (type) {
@@ -461,19 +466,18 @@ export function ItemSymbol({ type, w, h }) {
     case 'stage': return <g><rect x={i} y={i} width={w - i * 2} height={h - i * 2} className="sym" fill="url(#hatch)" /></g>
     case 'greenWall': return <g><rect x={i} y={i} width={w - i * 2} height={h - i * 2} className="sym-tree" /></g>
     case 'neonSign': return <g><rect x={0.15} y={h / 2 - 0.12} width={w - 0.3} height={0.24} className="sym fill-neon" /></g>
-    case 'rackWomen': case 'rackMen': case 'rackKids': {
-      const tint = { rackWomen: '#e7a9b8', rackMen: '#9fb2c6', rackKids: '#f2d27a' }[type]
+    case 'rack': {
       const along = w >= h
-      return <g>{box}<rect x={along ? 0.15 : w / 2 - 0.2} y={along ? h / 2 - 0.2 : 0.15} width={along ? w - 0.3 : 0.4} height={along ? 0.4 : h - 0.3} style={{ fill: tint }} className="sym" />{along ? <line x1={0.1} y1={h / 2} x2={w - 0.1} y2={h / 2} className="sym-line" /> : <line x1={w / 2} y1={0.1} x2={w / 2} y2={h - 0.1} className="sym-line" />}</g>
+      return <g>{box}<rect x={along ? 0.15 : w / 2 - 0.2} y={along ? h / 2 - 0.2 : 0.15} width={along ? w - 0.3 : 0.4} height={along ? 0.4 : h - 0.3} style={{ fill: pd.color }} className="sym" />{along ? <line x1={0.1} y1={h / 2} x2={w - 0.1} y2={h / 2} className="sym-line" /> : <line x1={w / 2} y1={0.1} x2={w / 2} y2={h - 0.1} className="sym-line" />}</g>
     }
-    case 'fridgeProduce': case 'fridgeMeat': case 'fridgeDairy': case 'drinksFridge': {
-      const tint = { fridgeProduce: '#a8d18d', fridgeMeat: '#e8a2a0', fridgeDairy: '#f3efe2', drinksFridge: '#9cc3e8' }[type]
-      return <g>{box}<rect x={0.2} y={0.2} width={w - 0.4} height={h - 0.4} style={{ fill: tint }} className="sym" /><path d={`M0.2 0.2 L${w - 0.2} ${h - 0.2}`} className="sym-dash" /></g>
-    }
-    case 'shelfProduce': case 'shelfSnacks': case 'shelfCondiments': {
-      const tint = { shelfProduce: '#d9b27a', shelfSnacks: '#f2c14e', shelfCondiments: '#d98c6a' }[type]
-      return <g>{box}{Array.from({ length: Math.round(Math.max(w, h)) * 2 - 1 }, (_, k) => w >= h ? <line key={k} x1={(k + 1) * 0.5} y1={i} x2={(k + 1) * 0.5} y2={h - i} className="sym-line" /> : <line key={k} y1={(k + 1) * 0.5} x1={i} y2={(k + 1) * 0.5} x2={w - i} className="sym-line" />)}<rect x={0.12} y={0.12} width={w - 0.24} height={h - 0.24} style={{ fill: tint, opacity: 0.5 }} /></g>
-    }
+    case 'chiller':
+      return <g>{box}<rect x={0.2} y={0.2} width={w - 0.4} height={h - 0.4} style={{ fill: pd.color }} className="sym" /><path d={`M0.2 0.2 L${w - 0.2} ${h - 0.2}`} className="sym-dash" /></g>
+    case 'aisle':
+      return <g>{box}<rect x={0.12} y={0.12} width={w - 0.24} height={h - 0.24} style={{ fill: pd.color, opacity: 0.6 }} />{Array.from({ length: Math.round(Math.max(w, h)) * 2 - 1 }, (_, k) => w >= h ? <line key={k} x1={(k + 1) * 0.5} y1={i} x2={(k + 1) * 0.5} y2={h - i} className="sym-line" /> : <line key={k} y1={(k + 1) * 0.5} x1={i} y2={(k + 1) * 0.5} x2={w - i} className="sym-line" />)}</g>
+    case 'display': case 'miniDisplay':
+      return <g>{box}<rect x={0.25} y={0.25} width={Math.max(0.2, w - 0.5)} height={Math.max(0.2, h - 0.5)} style={{ fill: pd?.color || '#eee' }} className="sym" /></g>
+    case 'mannequin':
+      return <g><circle cx={w / 2} cy={h / 2} r={0.36} style={{ fill: pd?.color || '#eee' }} className="sym" /><circle cx={w / 2} cy={h / 2} r={0.12} className="sym" /></g>
     case 'courtLines': return <g><rect x={0.05} y={0.05} width={w - 0.1} height={h - 0.1} className="sym-dash" /><line x1={w / 2} y1={0.05} x2={w / 2} y2={h - 0.05} className="sym-dash" /><circle cx={w / 2} cy={h / 2} r={0.7} className="sym-dash" /></g>
     case 'rug': return <g><rect x={0.15} y={0.15} width={w - 0.3} height={h - 0.3} className="sym-dash" /></g>
     case 'spotTrack': case 'linear': case 'scoreboard': case 'departures': return <g><rect x={0.15} y={h / 2 - 0.15} width={w - 0.3} height={0.3} className="sym-light" /></g>

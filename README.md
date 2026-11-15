@@ -8,6 +8,8 @@ A roguelite architecture game. Start as a junior architect with a corner shop. G
    - The Room and Furnish tools open a catalog. Pick one thing, place as many as you like, then press the red ✕ to stop. The catalog has a **This project / All** filter.
    - Select a room to get a bubble with **Move** (the room and everything in it), **Merge** (with a same-type neighbour) and **Erase** (asks for confirmation).
    - The Erase tool only removes objects.
+   - **Fixtures plus products.** Place a Clothes rack, Chiller, Aisle or Display, then assign its product (Women / Men / Kids, Produce / Meat / Dairy / Frozen / Drinks, Snacks / Condiments / Pasta & tins / Bakery...).
+   - **Merchandising** counts toward Functionality: keep each department together, put displays and mannequins next to their racks and produce crates by the produce chiller, and keep tills near the door. The plan draws link lines between fixtures that work together.
 3. **Decorate 3D.** Floors, wall paint, ceilings, facade and entrance doors, decor and landscaping, and ceiling lights, with a day/night toggle. Quality tiers: Basic, Standard, Premium.
 4. **Review.** Functionality, Requirements, Aesthetics and Budget, averaged into a grade:
    | Grade | Score | Effect |
@@ -18,7 +20,7 @@ A roguelite architecture game. Start as a junior architect with a corner shop. G
    | C | ≥ 55 | −1 level |
    | F | < 55 | fails: retry for a strike, or abandon the career |
 5. **Rewards.**
-   - **Permanent, for all architects:** B, A and S unlock that industry's basic, advanced and special items. Examples: boutique displays and mannequins (B), shoe walls and jewellery cases (A), a VIP salon and runway (S), or a drinks fridge (B), in-store bakery and deli (A) and a juice bar (S) for grocery.
+   - **Permanent, for all architects:** B, A and S unlock that industry's basic, advanced and special items and product lines. Examples: boutique displays and mannequins (B), shoe walls and jewellery cases (A), a VIP salon and runway (S), or drinks chillers (B), a bakery aisle, in-store bakery and deli (A) and a juice bar (S) for grocery.
    - **This architect only:** fees earn cash for supplier packs: paints, floors, facades, lighting, ceilings, entrance doors, decor and studio services (intern, contractor, mentor, renders).
 
 Ten commissions per career, and three strikes closes the studio. Finished careers go to the legacy hall.

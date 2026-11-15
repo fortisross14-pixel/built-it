@@ -6,7 +6,7 @@
 // Permanent unlocks: B / A / S on an industry unlocks that industry's items of that grade or lower.
 // Cash: every passed project pays a fee; spend it on supplier packs for this architect only.
 import { BRIEFS, GRADES, GRADE_RANK, TWISTS, estimateBudget, gradeFor } from '../game/briefs.js'
-import { ITEMS, MATERIALS, STYLES } from '../game/catalog.js'
+import { ITEMS, MATERIALS, PRODUCTS, STYLES } from '../game/catalog.js'
 import { PACKS } from '../game/packs.js'
 
 export function rng(seed) {
@@ -129,6 +129,13 @@ export function unlocksFor(industry, grade) {
   for (const src of [ITEMS, MATERIALS]) {
     for (const [id, def] of Object.entries(src)) {
       if (def.unlock && def.ind?.includes(industry) && GRADE_RANK[def.unlock] <= rank) out.push(id)
+    }
+  }
+  // Premium product lines (e.g. drinks chillers) unlock as "type:product".
+  for (const [type, def] of Object.entries(ITEMS)) {
+    if (!def.products) continue
+    for (const [pid, pd] of Object.entries(PRODUCTS[def.products])) {
+      if (pd.unlock && pd.ind?.includes(industry) && GRADE_RANK[pd.unlock] <= rank) out.push(`${type}:${pid}`)
     }
   }
   return out

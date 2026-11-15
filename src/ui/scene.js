@@ -3,7 +3,7 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
-import { CEILINGS, DOORS, ITEMS, LEVEL_HEIGHT, MATERIALS, PAINTS, itemSize } from '../game/catalog.js'
+import { CEILINGS, DOORS, ITEMS, LEVEL_HEIGHT, MATERIALS, PAINTS, itemSize, productDef } from '../game/catalog.js'
 import { cellOwners, ck, roomCells, roomRuns, wallEdges } from '../engine/plan.js'
 
 const WALL_T = 0.2
@@ -51,7 +51,8 @@ const QUALITY_LOOK = [
 ]
 const glow = () => mat('#fff6df', { emissive: '#ffd894', emissiveIntensity: 0.9 })
 
-function furniture(b, type, x, z, w, d, y0, quality = 1) {
+function furniture(b, type, x, z, w, d, y0, quality = 1, product = null) {
+  const pd = productDef({ type, product })
   const cx = x + w / 2, cz = z + d / 2
   const look = QUALITY_LOOK[quality] || QUALITY_LOOK[1]
   const wood = mat(look.wood), dark = mat('#4b4f52'), white = mat(look.white), steel = mat(look.steel), fabric = mat(look.fabric)
@@ -110,9 +111,9 @@ function furniture(b, type, x, z, w, d, y0, quality = 1) {
       b.box(mat('#78a6b8'), cx, y0 + 0.55, cz, w - 0.3, 0.2, d - 0.3); b.box(steel, cx, y0 + 0.25, cz, 0.2, 0.5, 0.2); break
     case 'shelving': case 'lockers':
       b.box(type === 'shelving' ? wood : mat('#6c8e86'), cx, y0 + 1, cz, w - 0.1, 2, d - 0.55); break
-    case 'rack': case 'rackWomen': case 'rackMen': case 'rackKids': {
-      const pal = { rackWomen: ['#d9849a', '#f0c9a8', '#b46a8f', '#f3e1e6', '#9c4e63'], rackMen: ['#3f566e', '#7d8b99', '#24313d', '#b8a98f', '#5d6b52'], rackKids: ['#f2c14e', '#7cc4e8', '#f28a6b', '#9bd18b', '#c9a5e8'] }[type] || ['#c96f53', '#e2c290', '#4f6d7a', '#9a8fb8', '#e8e3da']
-      const along = w >= d, L = Math.max(w, d), hang = type === 'rackKids' ? 0.65 : 0.85
+    case 'rack': {
+      const pal = pd?.goods || ['#c96f53', '#e2c290', '#4f6d7a', '#9a8fb8', '#e8e3da']
+      const along = w >= d, L = Math.max(w, d), hang = product === 'kids' ? 0.65 : 0.85
       if (along) b.box(steel, cx, y0 + 1.5, cz, w - 0.2, 0.05, 0.05); else b.box(steel, cx, y0 + 1.5, cz, 0.05, 0.05, d - 0.2)
       for (let i = 0; i < 6; i++) {
         const t = 0.2 + i * (L - 0.4) / 5
@@ -123,6 +124,7 @@ function furniture(b, type, x, z, w, d, y0, quality = 1) {
     }
     case 'display':
       b.box(white, cx, y0 + 0.45, cz, w - 0.15, 0.9, d - 0.3)
+      if (pd) for (let i = 0; i < 3; i++) { const along = w >= d; b.box(mat(pd.goods[i % pd.goods.length]), along ? x + 0.4 + i * (w - 0.8) / 2 : cx, y0 + 0.98, along ? cz : z + 0.4 + i * (d - 0.8) / 2, 0.25, 0.14, 0.25) }
       b.box(mat('#cfe3ea', { transparent: true, opacity: 0.45 }), cx, y0 + 1.1, cz, w - 0.15, 0.4, d - 0.3); break
     case 'artwork':
       b.box(white, cx, y0 + 0.5, cz, 0.55, 1, 0.55)
@@ -166,8 +168,8 @@ function furniture(b, type, x, z, w, d, y0, quality = 1) {
     case 'neonSign': b.box(mat('#ff4fa3', { emissive: '#ff2f8f', emissiveIntensity: 0.8 }), cx, y0 + 2.4, cz, w - 0.4, 0.3, 0.08); break
     case 'skylight': break // shown as a glazed opening in the roof
     // --- grocery
-    case 'fridgeProduce': case 'fridgeMeat': case 'fridgeDairy': case 'drinksFridge': {
-      const goods = { fridgeProduce: ['#7cb85a', '#e0a33c', '#c9473c', '#9ccf6a'], fridgeMeat: ['#c0484a', '#e48a83', '#a8323a', '#f0b0a0'], fridgeDairy: ['#f4f1e6', '#e9dfb8', '#cfe3f0', '#f7f4ea'], drinksFridge: ['#3f7bbf', '#e2513b', '#f2c14e', '#5aae6b'] }[type]
+    case 'chiller': {
+      const goods = pd?.goods || ['#cccccc', '#aaaaaa', '#888888', '#dddddd']
       b.box(mat('#e8ecee'), cx, y0 + 0.95, cz, w - 0.1, 1.9, d - 0.1)
       for (let r = 0; r < 3; r++) for (let i = 0; i < 4; i++) {
         const along = w >= d, L = Math.max(w, d), t = 0.3 + i * (L - 0.6) / 3
@@ -177,12 +179,12 @@ function furniture(b, type, x, z, w, d, y0, quality = 1) {
       b.box(mat('#bfe3f2', { transparent: true, opacity: 0.35 }), cx, y0 + 0.95, cz, w - 0.06, 1.86, d - 0.06)
       break
     }
-    case 'shelfProduce': case 'shelfSnacks': case 'shelfCondiments': {
-      const goods = { shelfProduce: ['#c9473c', '#e0a33c', '#8a6b3c', '#9ccf6a'], shelfSnacks: ['#f2c14e', '#e2513b', '#7c4fb0', '#3f7bbf'], shelfCondiments: ['#b8432f', '#f0d27a', '#5b7a3a', '#e8e0cf'] }[type]
-      const tall = type === 'shelfProduce' ? 0.8 : 1.6
+    case 'aisle': {
+      const goods = pd?.goods || ['#cccccc', '#aaaaaa', '#888888', '#dddddd']
+      const tall = pd?.low ? 0.8 : 1.6
       b.box(wood, cx, y0 + tall / 2, cz, w - 0.1, tall, d - 0.2)
       const along = w >= d, L = Math.max(w, d)
-      for (let r = 0; r < (type === 'shelfProduce' ? 1 : 3); r++) for (let i = 0; i < Math.round(L * 2); i++) {
+      for (let r = 0; r < (pd?.low ? 1 : 3); r++) for (let i = 0; i < Math.round(L * 2); i++) {
         const t = 0.25 + i * 0.5, px = along ? x + t : cx, pz = along ? cz : z + t
         b.box(mat(goods[(i + r) % 4]), px, y0 + 0.5 + r * 0.5 + (tall < 1 ? 0.35 : 0), pz, along ? 0.3 : d - 0.15, 0.22, along ? d - 0.15 : 0.3)
       }
@@ -200,10 +202,10 @@ function furniture(b, type, x, z, w, d, y0, quality = 1) {
     case 'miniDisplay': case 'jewelCase':
       b.box(white, cx, y0 + 0.5, cz, 0.7, 1, 0.7)
       b.box(mat('#cfe3ea', { transparent: true, opacity: 0.4 }), cx, y0 + 1.2, cz, 0.7, 0.4, 0.7)
-      b.box(mat(type === 'jewelCase' ? '#e0c060' : '#c96f53'), cx, y0 + 1.08, cz, 0.25, 0.15, 0.25)
+      b.box(mat(type === 'jewelCase' ? '#e0c060' : (pd?.goods?.[0] || '#c96f53')), cx, y0 + 1.08, cz, 0.25, 0.15, 0.25)
       break
     case 'mannequin':
-      for (const o of [-0.25, 0, 0.25]) { b.box(mat('#e9e3d8'), cx + o, y0 + 0.9, cz + Math.abs(o) * 0.4, 0.22, 1.0, 0.16); b.box(mat('#e9e3d8'), cx + o, y0 + 1.55, cz + Math.abs(o) * 0.4, 0.14, 0.18, 0.14); b.box(mat(['#9c4e63', '#3f566e', '#f2c14e'][Math.round(o * 4 + 1)]), cx + o, y0 + 1.1, cz + Math.abs(o) * 0.4, 0.26, 0.5, 0.2) }
+      for (const o of [-0.25, 0, 0.25]) { b.box(mat('#e9e3d8'), cx + o, y0 + 0.9, cz + Math.abs(o) * 0.4, 0.22, 1.0, 0.16); b.box(mat('#e9e3d8'), cx + o, y0 + 1.55, cz + Math.abs(o) * 0.4, 0.14, 0.18, 0.14); b.box(mat((pd?.goods || ['#9c4e63', '#3f566e', '#f2c14e'])[Math.round(o * 4 + 1)]), cx + o, y0 + 1.1, cz + Math.abs(o) * 0.4, 0.26, 0.5, 0.2) }
       break
     case 'shoeWall':
       b.box(wood, cx, y0 + 1.1, cz, w - 0.05, 2.2, d - 0.6)
@@ -377,7 +379,7 @@ export function buildModel(project, { cutLevel = null, context = true, showCeili
     // furniture
     for (const it of level.items) {
       const s = itemSize(it)
-      furniture(b, it.type, it.x, it.y, s.w, s.h, y0 + (ITEMS[it.type].site ? 0 : 0.2), it.q ?? 1)
+      furniture(b, it.type, it.x, it.y, s.w, s.h, y0 + (ITEMS[it.type].site ? 0 : 0.2), it.q ?? 1, it.product)
     }
   }
   b.flush(group)

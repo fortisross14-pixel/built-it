@@ -1,10 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { addRoom, canPlaceItem, cutRoom, duplicateLevel, extendRoom, mergeCandidates, mergeRooms, moveRoom, roomArea, roomPerimeter, newProject, placeItem, removeRoom, toggleOpening, wallEdges, verticalLinks, addLevel } from '../src/engine/plan.js'
-import { evaluate } from '../src/engine/score.js'
+import { evaluate, merchandise } from '../src/engine/score.js'
 import { START_CASH, abandonCareer, acceptOffer, acknowledge, archiveCareer, buyPack, completeCommission, makeOffer, newCareer, newMeta, retryCommission, rng, unlocksFor } from '../src/engine/career.js'
 import { PACKS, available, makeCtx } from '../src/game/packs.js'
-import { ITEMS } from '../src/game/catalog.js'
+import { ITEMS, PRODUCTS } from '../src/game/catalog.js'
 import { BRIEFS, estimateBudget } from '../src/game/briefs.js'
 import { cafeOffer, referenceCafe } from './fixtures.js'
 
@@ -135,7 +135,8 @@ test('career: grades unlock industry items permanently (B < A < S)', () => {
   assert.ok(unlocksFor('fashion', 'A').includes('shoeWall'))
   assert.ok(unlocksFor('fashion', 'S').includes('vipSalon'))
   assert.ok(!unlocksFor('fashion', 'C').length)
-  assert.ok(unlocksFor('grocery', 'B').includes('drinksFridge'))
+  assert.ok(unlocksFor('grocery', 'B').includes('chiller:drinks'))
+  assert.ok(!unlocksFor('grocery', 'B').includes('aisle:bakery') && unlocksFor('grocery', 'A').includes('aisle:bakery'))
   let meta = newMeta()
   let c = newCareer(meta, { name: 'Test', seed: 2 })
   c = acceptOffer(c, c.offers.find(o => o.industry === 'fashion').id, {})
@@ -178,6 +179,7 @@ test('every brief requirement is placeable with base items', () => {
   for (const [id, b] of Object.entries(BRIEFS)) {
     for (const req of b.items) {
       if (req.type) assert.ok(!ITEMS[req.type].unlock && !ITEMS[req.type].pack, `${id} requires locked ${req.type}`)
+      if (req.product) assert.ok(!PRODUCTS[ITEMS[req.type].products][req.product].unlock, `${id} requires locked product ${req.product}`)
       if (req.family) assert.ok(Object.values(ITEMS).some(i => (i.family === req.family || (req.family === 'tableFam')) && !i.unlock && !i.pack), `${id} family ${req.family}`)
     }
   }
@@ -237,9 +239,28 @@ test('family requirements accept any variant', () => {
   const offer = { ...makeOffer('boutique', rng(1), 0), twist: null }
   let p = newProject(offer)
   p = addRoom(p, 0, { x: 1, y: 1, w: 8, h: 6 }, 'sales').project
-  for (const [t, x] of [['rackWomen', 1], ['rackMen', 3], ['rackKids', 5], ['rackKids', 1]]) p = placeItem(p, 0, { type: t, x, y: x === 1 && t === 'rackKids' ? 4 : 2 }).project
+  for (const [prod, x, y] of [['women', 1, 2], ['men', 3, 2], ['kids', 5, 2], ['kids', 1, 4]]) p = placeItem(p, 0, { type: 'rack', product: prod, x, y }).project
   const r = evaluate(p, offer)
-  assert.ok(r.checklist.find(c => c.family === 'rack').ok)
+  assert.ok(r.checklist.find(c => c.type === 'rack' && !c.product).ok, 'any 4 racks')
+  assert.ok(r.checklist.find(c => c.product === 'women').ok)
+  assert.ok(r.checklist.find(c => c.product === 'men').ok)
+})
+
+test('merchandising: grouped departments and complements score higher than scattered ones', () => {
+  const room = { id: 'r', type: 'sales', x: 0, y: 0, w: 14, h: 10, cells: null }
+  const mk = (items) => ({ rooms: [room], doors: [], windows: [], items: items.map((it, i) => ({ id: `i${i}`, rot: 0, q: 1, ...it })) })
+  const grouped = mk([
+    { type: 'rack', product: 'women', x: 0, y: 0 }, { type: 'rack', product: 'women', x: 2, y: 0 }, { type: 'display', product: 'women', x: 4, y: 0 },
+    { type: 'rack', product: 'men', x: 0, y: 6 }, { type: 'rack', product: 'men', x: 2, y: 6 }, { type: 'display', product: 'men', x: 4, y: 6 },
+  ])
+  const scattered = mk([
+    { type: 'rack', product: 'women', x: 0, y: 0 }, { type: 'rack', product: 'men', x: 2, y: 0 }, { type: 'display', product: 'men', x: 10, y: 3 },
+    { type: 'rack', product: 'women', x: 6, y: 8 }, { type: 'rack', product: 'men', x: 11, y: 8 }, { type: 'display', product: 'women', x: 12, y: 0 },
+  ])
+  const g = merchandise(grouped), sc = merchandise(scattered)
+  assert.ok(g.score > 0.9, `grouped ${g.score}`)
+  assert.ok(sc.score < 0.4, `scattered ${sc.score}`)
+  assert.ok(g.links.some(l => l.kind === 'complement') && g.links.some(l => l.kind === 'group'))
 })
 
 test('quality is a trade-off: premium raises F and A but costs budget', () => {

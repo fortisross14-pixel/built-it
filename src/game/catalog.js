@@ -80,7 +80,7 @@ export const ITEMS = {
   desk:        { label: 'Desk',            w: 2, h: 1, cost: 700,  rooms: ['office', 'openOffice', 'classroom', 'reading', 'exam'], group: F },
   deskRow:     { label: 'Student desks',   w: 3, h: 1, cost: 1200, rooms: ['classroom'], group: F },
   shelving:    { label: 'Shelving',        w: 2, h: 1, cost: 700,  rooms: ['storage', 'stacks', 'sales', 'kitchen', 'classroom', 'office', 'coldroom'], group: F },
-  display:     { label: 'Display case',    w: 2, h: 1, cost: 1600, rooms: ['sales', 'gallery', 'shop', 'service', 'atrium', 'market'], group: F },
+  display:     { label: 'Display case',    w: 2, h: 1, cost: 1600, rooms: ['sales', 'gallery', 'shop', 'service', 'atrium', 'market'], group: F, products: 'display' },
   artwork:     { label: 'Exhibit plinth',  w: 1, h: 1, cost: 1500, rooms: ['gallery', 'atrium', 'lobby'], group: F },
   stage:       { label: 'Stage',           w: 4, h: 2, cost: 3000, rooms: ['hall'], group: F },
   lockers:     { label: 'Lockers',         w: 2, h: 1, cost: 900,  rooms: ['corridor', 'classroom', 'hall', 'lobby', 'changing', 'gym'], group: F },
@@ -97,12 +97,10 @@ export const ITEMS = {
   elevator:    { label: 'Elevator',        w: 2, h: 2, cost: 25000, rooms: null, group: V, vertical: true, walkable: true, lift: true },
 
   // --- fashion
-  rackWomen:   { label: "Women's rack",    w: 2, h: 1, cost: 800,  rooms: ['sales', 'shop'], group: F, ind: ['fashion', 'retail'], family: 'rack' },
-  rackMen:     { label: "Men's rack",      w: 2, h: 1, cost: 800,  rooms: ['sales', 'shop'], group: F, ind: ['fashion', 'retail'], family: 'rack' },
-  rackKids:    { label: "Kids' rack",      w: 2, h: 1, cost: 700,  rooms: ['sales', 'shop'], group: F, ind: ['fashion', 'retail'], family: 'rack' },
+  rack:        { label: 'Clothes rack',    w: 2, h: 1, cost: 800,  rooms: ['sales', 'shop'], group: F, ind: ['fashion', 'retail'], family: 'rack', products: 'apparel' },
   mirror:      { label: 'Full mirror',     w: 1, h: 1, cost: 400,  rooms: ['fitting', 'sales', 'changing'], group: F, ind: ['fashion'] },
-  miniDisplay: { label: 'Boutique display',w: 1, h: 1, cost: 1400, rooms: ['sales', 'shop'], group: F, ind: ['fashion', 'retail'], unlock: 'B', boost: { f: 3 } },
-  mannequin:   { label: 'Mannequin trio',  w: 1, h: 1, cost: 1200, rooms: ['sales', 'shop'], group: D, ind: ['fashion', 'retail'], unlock: 'B', layer: 'decor', boost: { a: 3 }, decor: 1 },
+  miniDisplay: { label: 'Boutique display',w: 1, h: 1, cost: 1400, rooms: ['sales', 'shop'], group: F, ind: ['fashion', 'retail'], unlock: 'B', boost: { f: 3 }, products: 'display' },
+  mannequin:   { label: 'Mannequin trio',  w: 1, h: 1, cost: 1200, rooms: ['sales', 'shop'], group: D, ind: ['fashion', 'retail'], unlock: 'B', layer: 'decor', boost: { a: 3, products: 'apparel' }, decor: 1 },
   shoeWall:    { label: 'Shoe wall',       w: 3, h: 1, cost: 3200, rooms: ['sales', 'shop'], group: F, ind: ['fashion'], unlock: 'A', boost: { f: 3, a: 2 } },
   jewelCase:   { label: 'Jewellery case',  w: 1, h: 1, cost: 4500, rooms: ['sales', 'shop'], group: F, ind: ['fashion'], unlock: 'A', boost: { a: 4 } },
   spotTrack:   { label: 'Gallery spots',   w: 3, h: 1, cost: 1400, rooms: null, group: L, ind: ['fashion', 'retail', 'civic'], unlock: 'A', layer: 'decor', ceiling: true, overlay: true, walkable: true, light: 15, ambience: 0.8 },
@@ -118,14 +116,9 @@ export const ITEMS = {
   chefTable:   { label: "Chef's table",    w: 4, h: 2, cost: 9500, rooms: ['kitchen', 'seating'], group: F, ind: ['food'], unlock: 'S', seats: 8, boost: { f: 3, a: 6 } },
 
   // --- grocery
-  fridgeProduce: { label: 'Fresh produce chiller', w: 3, h: 1, cost: 3800, rooms: ['market', 'sales'], group: E, ind: ['grocery'], family: 'chiller' },
-  fridgeMeat:    { label: 'Meat chiller',          w: 3, h: 1, cost: 4200, rooms: ['market', 'sales'], group: E, ind: ['grocery'], family: 'chiller' },
-  fridgeDairy:   { label: 'Dairy chiller',         w: 3, h: 1, cost: 3900, rooms: ['market', 'sales'], group: E, ind: ['grocery'], family: 'chiller' },
-  shelfProduce:  { label: 'Produce crates',        w: 2, h: 1, cost: 900,  rooms: ['market', 'sales'], group: F, ind: ['grocery'], family: 'aisle' },
-  shelfSnacks:   { label: 'Candy & chips aisle',   w: 3, h: 1, cost: 1100, rooms: ['market', 'sales'], group: F, ind: ['grocery'], family: 'aisle' },
-  shelfCondiments:{ label: 'Condiments aisle',     w: 3, h: 1, cost: 1100, rooms: ['market', 'sales'], group: F, ind: ['grocery'], family: 'aisle' },
+  chiller:       { label: 'Chiller',          w: 3, h: 1, cost: 3900, rooms: ['market', 'sales'], group: E, ind: ['grocery'], family: 'chiller', products: 'chilled' },
+  aisle:         { label: 'Aisle shelving',   w: 3, h: 1, cost: 1100, rooms: ['market', 'sales'], group: F, ind: ['grocery'], family: 'aisle', products: 'dry' },
   checkout:      { label: 'Checkout',              w: 2, h: 1, cost: 2600, rooms: ['market', 'sales', 'shop'], group: E, ind: ['grocery', 'retail', 'fashion'] },
-  drinksFridge:  { label: 'Drinks fridge',         w: 2, h: 1, cost: 3000, rooms: ['market', 'sales'], group: E, ind: ['grocery'], unlock: 'B', family: 'chiller', boost: { f: 3 } },
   bakeryCorner:  { label: 'In-store bakery',       w: 3, h: 2, cost: 8000, rooms: ['market'], group: E, ind: ['grocery'], unlock: 'A', boost: { f: 2, a: 3 } },
   gourmetDeli:   { label: 'Gourmet deli',          w: 3, h: 2, cost: 9000, rooms: ['market'], group: E, ind: ['grocery'], unlock: 'A', boost: { a: 4 } },
   juiceBar:      { label: 'Fresh juice bar',       w: 3, h: 1, cost: 6000, rooms: ['market', 'foodcourt'], group: E, ind: ['grocery', 'food'], unlock: 'S', boost: { f: 2, a: 5 } },
@@ -227,6 +220,44 @@ export const DOORS = {
   pivot:    { label: 'Timber pivot door',  color: '#8a5f3c', cost: 4200, tags: ['warm', 'luxe'], pack: 'entrances', boost: { a: 3 } },
   revolving:{ label: 'Revolving door',     color: '#b9c3c8', cost: 9000, tags: ['corporate', 'luxe'], pack: 'entrances', boost: { f: 2, a: 2 } },
 }
+
+// Products assigned to a fixture after placing it (a rack gets "Women", a chiller "Frozen").
+// dept groups products for merchandising; unlock gates premium product lines like other unlocks.
+export const PRODUCTS = {
+  apparel: {
+    women: { label: 'Women', color: '#e7a9b8', goods: ['#d9849a', '#f0c9a8', '#b46a8f', '#f3e1e6', '#9c4e63'], dept: 'women' },
+    men:   { label: 'Men',   color: '#9fb2c6', goods: ['#3f566e', '#7d8b99', '#24313d', '#b8a98f', '#5d6b52'], dept: 'men' },
+    kids:  { label: 'Kids',  color: '#f2d27a', goods: ['#f2c14e', '#7cc4e8', '#f28a6b', '#9bd18b', '#c9a5e8'], dept: 'kids' },
+  },
+  display: {
+    general: { label: 'Accessories', color: '#d9d4c8', goods: ['#c96f53', '#e0c060', '#4f6d7a'], dept: null },
+    women:   { label: 'Women',       color: '#e7a9b8', goods: ['#d9849a', '#e0c060', '#b46a8f'], dept: 'women' },
+    men:     { label: 'Men',         color: '#9fb2c6', goods: ['#3f566e', '#b8a98f', '#24313d'], dept: 'men' },
+    kids:    { label: 'Kids',        color: '#f2d27a', goods: ['#f2c14e', '#7cc4e8', '#f28a6b'], dept: 'kids' },
+  },
+  chilled: {
+    produce: { label: 'Fresh produce', color: '#a8d18d', goods: ['#7cb85a', '#e0a33c', '#c9473c', '#9ccf6a'], dept: 'produce' },
+    meat:    { label: 'Meat',          color: '#e8a2a0', goods: ['#c0484a', '#e48a83', '#a8323a', '#f0b0a0'], dept: 'meat' },
+    dairy:   { label: 'Dairy',         color: '#f3efe2', goods: ['#f4f1e6', '#e9dfb8', '#cfe3f0', '#f7f4ea'], dept: 'dairy' },
+    frozen:  { label: 'Frozen',        color: '#bfe0f5', goods: ['#e8f4fb', '#9cc8e8', '#f0f0f0', '#7fb2d9'], dept: 'frozen' },
+    drinks:  { label: 'Drinks',        color: '#9cc3e8', goods: ['#3f7bbf', '#e2513b', '#f2c14e', '#5aae6b'], dept: 'drinks', ind: ['grocery'], unlock: 'B' },
+  },
+  dry: {
+    produce:    { label: 'Produce crates',   color: '#d9b27a', goods: ['#c9473c', '#e0a33c', '#8a6b3c', '#9ccf6a'], dept: 'produce', low: true },
+    snacks:     { label: 'Candy & chips',    color: '#f2c14e', goods: ['#f2c14e', '#e2513b', '#7c4fb0', '#3f7bbf'], dept: 'snacks' },
+    condiments: { label: 'Condiments',       color: '#d98c6a', goods: ['#b8432f', '#f0d27a', '#5b7a3a', '#e8e0cf'], dept: 'pantry' },
+    pantry:     { label: 'Pasta & tins',     color: '#e2c98f', goods: ['#e0c48a', '#c9473c', '#3f7bbf', '#8a6b3c'], dept: 'pantry' },
+    bakery:     { label: 'Bread & bakery',   color: '#d7a15a', goods: ['#d7a15a', '#b9803e', '#efd3a2', '#a86a2c'], dept: 'bakery', ind: ['grocery'], unlock: 'A' },
+  },
+}
+// Complements: a fixture of `a` in a department sells more near a fixture of `b` in the same one.
+export const COMPLEMENTS = [
+  ['display', 'rack'], ['miniDisplay', 'rack'], ['mannequin', 'rack'], ['aisle', 'chiller'],
+]
+export function productsFor(type) { return ITEMS[type]?.products ? PRODUCTS[ITEMS[type].products] : null }
+export function productDef(it) { const p = productsFor(it.type); return p ? p[it.product] || Object.values(p)[0] : null }
+export function defaultProduct(type) { const p = productsFor(type); return p ? Object.keys(p)[0] : undefined }
+export function itemLabel(it) { const pd = productDef(it); return pd ? `${ITEMS[it.type].label} · ${pd.label}` : ITEMS[it.type].label }
 
 export const BASE_COST = { perM2: 1250, window: 900, door: 650, levelPremium: 0.06, paint: 12 }
 

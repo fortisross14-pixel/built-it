@@ -1,5 +1,5 @@
 // Review engine: scores a project on Functionality, Requirements and Aesthetics.
-import { CEILINGS, DOORS, ITEMS, MATERIALS, PAINTS, ROOMS, STYLES, familyOf, q } from '../game/catalog.js'
+import { CEILINGS, COMPLEMENTS, DOORS, ITEMS, MATERIALS, PAINTS, ROOMS, STYLES, defaultProduct, familyOf, itemSize, productDef, q } from '../game/catalog.js'
 import { BRIEFS, GRADES, TWISTS, gradeFor, reqLabel } from '../game/briefs.js'
 import { cellOwners, ck, edgeCells, footprint, inRoom as inRoomCell, itemCells, projectCost, roomArea, roomAt, roomCells, verticalLinks, wallEdges } from './plan.js'
 
@@ -225,8 +225,21 @@ export function evaluate(project, offer, kit = []) {
   const equipQ = useful.length ? avg(useful.map(it => q(it.q).score)) : 0
   note('functionality', 'Equipment quality', equipQ, 'Quality furniture and equipment that will last.', 'Cheap equipment: staff are already complaining.')
 
-  let functionality = 100 * (0.25 * reach + 0.17 * access + 0.12 * distScore + (brief.adj.length ? 0.18 : 0) * adj + 0.05 * crowd + 0.05 * wet + 0.05 * lift + 0.07 * lighting + 0.06 * equipQ)
-  functionality /= (brief.adj.length ? 1 : 0.82)
+  // Merchandising: departments grouped together, complements side by side, tills by the door.
+  const merch = project.levels.map(level => merchandise(level, project.levels.indexOf(level) === 0 ? circ.entrances : []))
+  const merchItems = merch.reduce((s, m) => s + m.count, 0)
+  const merchW = merchItems >= 3 ? 0.1 : 0
+  const merchScore = merchW ? merch.filter(m => m.count).reduce((s, m) => s + m.score * m.count, 0) / merchItems : 0
+  if (merchW) {
+    const parts = merch.flatMap(m => m.parts)
+    const worst = parts.sort((a, b) => a.v - b.v)[0]
+    note('functionality', 'Merchandising', merchScore,
+      'Departments are grouped, complements sit side by side and the tills are by the door.',
+      worst?.why || 'Products are scattered: group departments and put complements together.')
+    checklist.push({ label: 'Merchandising', ok: merchScore >= 0.75, detail: `${Math.round(merchScore * 100)}%`, kind: 'merch' })
+  }
+  let functionality = 100 * (0.25 * reach + 0.17 * access + 0.12 * distScore + (brief.adj.length ? 0.18 : 0) * adj + 0.05 * crowd + 0.05 * wet + 0.05 * lift + 0.07 * lighting + 0.06 * equipQ + merchW * merchScore)
+  functionality /= (brief.adj.length ? 1 : 0.82) + merchW
   // Signature pieces: each distinct boosted item type adds once (unlocks are meant to feel good).
   const boostTypes = new Set(items.map(it => it.type).filter(t => ITEMS[t].boost))
   let boostF = [...boostTypes].reduce((s, t) => s + (ITEMS[t].boost.f || 0), 0)
@@ -259,9 +272,9 @@ export function evaluate(project, offer, kit = []) {
 
   const itemScores = brief.items.map(req => {
     const n = req.count || 1
-    const match = (it) => req.family ? familyOf(it.type) === req.family : it.type === req.type
+    const match = (it) => (req.family ? familyOf(it.type) === req.family : it.type === req.type) && (!req.product || (it.product || defaultProduct(it.type)) === req.product)
     const have = items.filter(it => match(it) && (!req.in || itemRoomType(project, it) === req.in)).length
-    checklist.push({ label: `${reqLabel(req)}${n > 1 ? ` ×${n}` : ''}${req.in ? ` in ${ROOMS[req.in].label}` : ''}`, ok: have >= n, detail: `${Math.min(have, n)}/${n}`, kind: 'item', type: req.type, family: req.family })
+    checklist.push({ label: `${reqLabel(req)}${n > 1 ? ` ×${n}` : ''}${req.in ? ` in ${ROOMS[req.in].label}` : ''}`, ok: have >= n, detail: `${Math.min(have, n)}/${n}`, kind: 'item', type: req.type, family: req.family, product: req.product })
     return clamp(have / n)
   })
   const itemScore = avg(itemScores)
@@ -400,4 +413,50 @@ export function critique(result, offer) {
     1: ['“We are going to need to talk to our lawyers.”'],
   }[result.stars][0]
   return { head, praise, gripes }
+}
+
+// ---------------------------------------------------------------- merchandising
+const gap = (a, b) => {
+  const sa = itemSize(a), sb = itemSize(b)
+  const dx = Math.max(0, b.x - (a.x + sa.w), a.x - (b.x + sb.w))
+  const dy = Math.max(0, b.y - (a.y + sa.h), a.y - (b.y + sb.h))
+  return Math.max(dx, dy)
+}
+const centre = (it) => { const s = itemSize(it); return { x: it.x + s.w / 2, y: it.y + s.h / 2 } }
+
+// Scores one level and returns the links the plan draws between fixtures that work together.
+export function merchandise(level, entrances = []) {
+  const roomOf = (it) => roomAt(level, it.x, it.y)?.id
+  const goods = level.items.filter(it => productDef(it)?.dept).map(it => ({ it, dept: productDef(it).dept, room: roomOf(it) }))
+  const links = [], parts = []
+  if (!goods.length) return { score: 0, count: 0, links, parts }
+  // 1. Grouping: each fixture wants a same-department neighbour (touching or one aisle apart).
+  const multi = goods.filter(g => goods.some(o => o !== g && o.dept === g.dept && o.room === g.room))
+  let grouped = 0
+  for (const g of multi) {
+    const near = goods.filter(o => o !== g && o.dept === g.dept && o.room === g.room && gap(g.it, o.it) <= 1)
+    if (near.length) grouped++
+    for (const o of near) if (g.it.id < o.it.id) links.push({ a: centre(g.it), b: centre(o.it), kind: 'group', color: productDef(g.it).color })
+  }
+  if (multi.length) parts.push({ v: grouped / multi.length, w: 0.5, why: `${multi.length - grouped} fixture(s) sit apart from the rest of their department. Group them.` })
+  // 2. Complements: displays and mannequins next to their racks, produce crates by the chillers.
+  let compN = 0, compOk = 0
+  for (const [a, b] of COMPLEMENTS) {
+    for (const g of goods.filter(x => x.it.type === a)) {
+      const partners = goods.filter(o => o.it.type === b && o.dept === g.dept && o.room === g.room)
+      if (!level.items.some(o => o.type === b)) continue
+      compN++
+      const near = partners.filter(o => gap(g.it, o.it) <= 2)
+      if (near.length) { compOk++; links.push({ a: centre(g.it), b: centre(near[0].it), kind: 'complement', color: productDef(g.it).color }) }
+    }
+  }
+  if (compN) parts.push({ v: compOk / compN, w: 0.3, why: `${compN - compOk} display(s) aren't next to the matching department. Put women's accessories by women's racks.` })
+  // 3. Tills near the door.
+  const tills = level.items.filter(it => it.type === 'checkout' || it.type === 'counter')
+  if (tills.length && entrances.length) {
+    const ok = tills.filter(t => entrances.some(e => Math.abs(centre(t).x - e.x - 0.5) + Math.abs(centre(t).y - e.y - 0.5) <= 6)).length
+    parts.push({ v: ok / tills.length, w: 0.2, why: 'The tills are far from the door. Customers should pass them on the way out.' })
+  }
+  const W = parts.reduce((s, p) => s + p.w, 0)
+  return { score: W ? parts.reduce((s, p) => s + p.v * p.w, 0) / W : 1, count: goods.length, links, parts }
 }
