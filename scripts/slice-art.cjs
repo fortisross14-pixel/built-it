@@ -22,13 +22,13 @@ const ORDER = ['boutique', 'fastFood', 'cornerShop', 'cafe', 'fastFashion', 'bak
       const cv = document.createElement('canvas'); cv.width = cv.height = 256
       const s = Math.min(tw, th)
       cv.getContext('2d').drawImage(img, c * tw + (tw - s) / 2, r * th + (th - s) / 2, s, s, 0, 0, 256, 256)
-      out.push(cv.toDataURL('image/png').split(',')[1])
+      out.push(cv.toDataURL('image/jpeg', 0.88).split(',')[1])
     }
     return out
   }, { data, cols, rows })
   const dir = path.join(__dirname, '..', 'public', 'art', 'projects')
   fs.mkdirSync(dir, { recursive: true })
-  tiles.slice(0, ORDER.length).forEach((b64, i) => fs.writeFileSync(path.join(dir, `${ORDER[i]}.png`), Buffer.from(b64, 'base64')))
+  tiles.slice(0, ORDER.length).forEach((b64, i) => fs.writeFileSync(path.join(dir, `${ORDER[i]}.jpg`), Buffer.from(b64, 'base64')))
   console.log(`wrote ${Math.min(tiles.length, ORDER.length)} tiles to ${dir}`)
   await browser.close()
 })()

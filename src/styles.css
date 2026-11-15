@@ -1149,3 +1149,6 @@ h3.title-pair { font-size: 19px; margin: 0; letter-spacing: -.01em; }
 .sheet { animation: win-open .55s var(--ease-out) backwards; border-radius: 26px 26px 0 0; }
 @media (min-width: 900px) { .sheet { border-radius: 26px; } }
 .modal { border-radius: 22px; background: var(--panel); border-color: #fff; box-shadow: var(--shadow-2); }
+.win { overflow-x: hidden; }
+.ow-head { min-width: 0; }
+.ow-head .title-pair { overflow-wrap: anywhere; }

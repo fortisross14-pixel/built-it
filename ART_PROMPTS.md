@@ -2,7 +2,7 @@
 
 The game shows one square icon per project type on the commission board, in the detail sheet, on the ladder and in the review. Until an image exists, a coloured tile with the industry icon stands in.
 
-**Where the files go:** `public/art/projects/<id>.png`, square, at least 96 × 96 (256 × 256 looks better on retina phones).
+**Where the files go:** `public/art/projects/<id>.jpg`, square, at least 96 × 96 (256 × 256 looks better on retina phones).
 
 ## Option A: one grid image (fastest)
 
