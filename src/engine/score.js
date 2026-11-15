@@ -1,6 +1,7 @@
 // Review engine: scores a project on Functionality, Requirements and Aesthetics.
 import { CEILINGS, COMPLEMENTS, DOORS, ITEMS, MATERIALS, PAINTS, ROOMS, STYLES, defaultProduct, familyOf, itemSize, productDef, q } from '../game/catalog.js'
 import { BRIEFS, GRADES, TWISTS, gradeFor, reqLabel } from '../game/briefs.js'
+import { bgOf } from '../game/architects.js'
 import { cellOwners, ck, edgeCells, footprint, inRoom as inRoomCell, itemCells, projectCost, roomArea, roomAt, roomCells, verticalLinks, wallEdges } from './plan.js'
 
 const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v))
@@ -252,6 +253,8 @@ export function evaluate(project, offer, kit = []) {
   if (boostF) notes.push({ group: 'functionality', label: 'Smart pieces', value: 1, text: `Specialist equipment makes the place work better (+${boostF}).` })
   if (!hasEntrance) functionality = Math.min(functionality, 12)
   if (kit.includes('mentor')) functionality += 5
+  const bg = bgOf(kit)
+  if (bg?.func) functionality += bg.func
 
   // ---------------- Requirements
   const slots = []
@@ -378,6 +381,8 @@ export function evaluate(project, offer, kit = []) {
   const parts = [[daylight, 0.2 * dw], [proportion, 0.08], [style, 0.2], [palette, 0.08], [decor, 0.1], [facadeScore, 0.1], [compact, 0.08], [finishQ, 0.1], [mood, 0.06]]
   let aesthetics = 100 * parts.reduce((s, [v, w]) => s + v * w, 0) / parts.reduce((s, [, w]) => s + w, 0) + specialBonus
   if (kit.includes('renders')) aesthetics += 5
+  if (bg?.aes) aesthetics += bg.aes
+  if (bg?.reqForgive) requirements = 100 - (100 - requirements) * (1 - bg.reqForgive)
 
   functionality = Math.round(clamp(functionality, 0, 100))
   requirements = Math.round(clamp(requirements, 0, 100))

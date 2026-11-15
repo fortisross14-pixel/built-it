@@ -4,10 +4,13 @@ import Icon from './icons.jsx'
 import View3D from './View3D.jsx'
 import { ItemSymbol } from './PlanView.jsx'
 import { BRIEFS, GRADES, TWISTS } from '../game/briefs.js'
-import { INDUSTRIES, ITEMS, MATERIALS, STYLES } from '../game/catalog.js'
+import { INDUSTRIES, ITEMS, MATERIALS, ROOMS, STYLES } from '../game/catalog.js'
 import { PACKS, packContents } from '../game/packs.js'
 import { MAX_LEVEL, RANKS, feeFor, randomArchitect, rankFor } from '../engine/career.js'
 import { referenceCafe } from '../game/demo.js'
+import { BACKGROUNDS, COUNTRIES, GENDERS, countryName, flag } from '../game/architects.js'
+import ProjectArt from './ProjectArt.jsx'
+import PlanView from './PlanView.jsx'
 import { money } from './format.js'
 
 const GRADE_COLOR = { S: 'g-s', A: 'g-a', B: 'g-b', C: 'g-c', F: 'g-f' }
@@ -37,6 +40,14 @@ export function SettingsButton() {
         <div className="modal-wrap" onClick={() => setOpen(false)}>
           <div className="modal" onClick={e => e.stopPropagation()} role="dialog" aria-label="Settings">
             <h3>Settings</h3>
+            <span className="mono dim">STYLE</span>
+            <div className="theme-pick">
+              {[['studio', 'Drafting Studio'], ['blueprint', 'Blueprint'], ['atelier', 'Atelier']].map(([id, label]) => (
+                <button key={id} className={s.theme === id ? 'on' : ''} onClick={() => { setSetting('theme', id); feedback('select') }}>
+                  <span className={`sample ${id}`}><i /><b /></span>{label}
+                </button>
+              ))}
+            </div>
             <div className="settings-list">
               {rows.map(([k, label, hint]) => (
                 <button key={k} className="toggle-row" role="switch" aria-checked={!!s[k]} onClick={() => { setSetting(k, !s[k]); feedback('select') }}>
@@ -99,27 +110,66 @@ export function Home({ meta, career, onContinue, onNew, onUnlocks, onLegacy }) {
 // ------------------------------------------------------------------ New career
 export function NewCareer({ meta, onStart, onBack, warnReplace }) {
   const [name, setName] = useState(() => randomArchitect())
+  const [age, setAge] = useState(27)
+  const [gender, setGender] = useState('Prefer not to say')
+  const [country, setCountry] = useState('')
+  const [background, setBackground] = useState('architect')
   return (
     <div className="page">
       <header className="page-top"><button className="icon-btn" onClick={onBack} aria-label="Back"><Icon name="back" /></button><Brand small /><span /></header>
       <div className="page-body narrow">
         <span className="mono dim">ARCHITECT #{meta.careers + 1}</span>
-        <h2>Open a new studio</h2>
+        <h2>Who's opening the studio?</h2>
         {warnReplace && <p className="warn">Your current architect's career will end and go to the legacy hall.</p>}
-        <label className="field">
-          <span className="mono dim">NAME ON THE DOOR</span>
-          <div className="row">
-            <input value={name} onChange={e => setName(e.target.value)} maxLength={28} />
-            <button className="icon-btn" onClick={() => setName(randomArchitect(Date.now() + Math.random() * 1e6))} aria-label="Random name"><Icon name="dice" /></button>
+        <div className="profile-card">
+          <div className="avatar big">{name.split(' ').map(x => x[0]).join('').slice(0, 2)}<span className="avatar-flag">{flag(country)}</span></div>
+          <div className="profile-fields">
+            <label className="field">
+              <span className="mono dim">NAME</span>
+              <div className="row">
+                <input value={name} onChange={e => setName(e.target.value)} maxLength={28} />
+                <button className="icon-btn" onClick={() => { feedback('tap'); setName(randomArchitect(Date.now() + Math.random() * 1e6)) }} aria-label="Random name"><Icon name="dice" /></button>
+              </div>
+            </label>
+            <div className="field-row">
+              <label className="field">
+                <span className="mono dim">AGE</span>
+                <div className="stepper">
+                  <button onClick={() => setAge(a => Math.max(22, a - 1))} aria-label="Younger">−</button>
+                  <b className="mono">{age}</b>
+                  <button onClick={() => setAge(a => Math.min(75, a + 1))} aria-label="Older">+</button>
+                </div>
+              </label>
+              <label className="field grow">
+                <span className="mono dim">COUNTRY</span>
+                <select value={country} onChange={e => setCountry(e.target.value)} className="select">
+                  <option value="">Choose…</option>
+                  {COUNTRIES.map(([code, n]) => <option key={code} value={code}>{flag(code)} {n}</option>)}
+                </select>
+              </label>
+            </div>
+            <div className="field">
+              <span className="mono dim">GENDER</span>
+              <div className="chips wrap">{GENDERS.map(g => <button key={g} className={`chip ${gender === g ? 'on' : ''}`} onClick={() => setGender(g)}>{g}</button>)}</div>
+            </div>
           </div>
-        </label>
+        </div>
+        <div className="field">
+          <span className="mono dim">BACKGROUND</span>
+          <div className="bg-grid">
+            {Object.entries(BACKGROUNDS).map(([id, b]) => (
+              <button key={id} className={`bg-card ${background === id ? 'on' : ''}`} onClick={() => { feedback('select'); setBackground(id) }}>
+                <Icon name={b.icon} size={22} /><b>{b.label}</b><span>{b.text}</span>
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="info-grid">
           <div><Icon name="flag" /><b>Start at level 1</b><span>Your first client is one of three basics: a boutique, a fast-food counter or a corner grocery.</span></div>
           <div><Icon name="lock" /><b>{meta.unlocked.length} permanent unlocks</b><span>Everything earlier architects unlocked with B, A and S grades is yours from day one.</span></div>
-          <div><Icon name="coin" /><b>{money(3000)} starting cash</b><span>Fees from each project buy supplier packs (paints, floors, lighting, doors) for this architect only.</span></div>
         </div>
         <div className="sticky-cta">
-          <button className="primary big" disabled={!name.trim()} onClick={() => onStart({ name: name.trim() })}><Icon name="building" size={18} />Open studio</button>
+          <button className="primary big" disabled={!name.trim()} onClick={() => onStart({ name: name.trim(), profile: { age, gender, country, background } })}><Icon name="building" size={18} />Open studio</button>
         </div>
       </div>
     </div>
@@ -149,6 +199,7 @@ function Ladder({ career }) {
 
 export function Hub({ career, meta, onAccept, onResume, onHome, onRetire, onOpenWork, onShop, onUnlocks }) {
   const [confirmRetire, setConfirmRetire] = useState(false)
+  const [openOffer, setOpenOffer] = useState(null)
   const rank = rankFor(career.rep)
   const nextRank = RANKS.find(r => r.rep > career.rep)
   const slots = Array.from({ length: career.maxCommissions }, (_, i) => career.portfolio[i] || null)
@@ -161,10 +212,11 @@ export function Hub({ career, meta, onAccept, onResume, onHome, onRetire, onOpen
       </header>
       <div className="page-body">
         <section className="architect">
-          <div className="avatar">{career.name.split(' ').map(s => s[0]).join('').slice(0, 2)}</div>
+          <div className="avatar">{career.name.split(' ').map(s => s[0]).join('').slice(0, 2)}{career.profile?.country && <span className="avatar-flag">{flag(career.profile.country)}</span>}</div>
           <div className="who">
             <span className="mono dim">STUDIO OF</span>
             <h2>{career.name}</h2>
+            {career.profile && <span className="profile-line mono dim">{[career.profile.age && `${career.profile.age}`, career.profile.country && countryName(career.profile.country), BACKGROUNDS[career.profile.background]?.label].filter(Boolean).join(' · ').toUpperCase()}</span>}
             <span className="rank">{rank.title}{nextRank && <em className="mono dim"> · {nextRank.rep - career.rep} rep to {nextRank.title}</em>}</span>
           </div>
           <div className="stat">
@@ -197,7 +249,7 @@ export function Hub({ career, meta, onAccept, onResume, onHome, onRetire, onOpen
           <section>
             <div className="sec-head"><h3>Commission board</h3><span className="mono dim">LEVEL {career.level}</span></div>
             <div className="offers">
-              {career.offers.map(o => <OfferCard key={o.id} offer={o} meta={meta} onAccept={() => onAccept(o.id)} />)}
+              {career.offers.map(o => <OfferTile key={o.id} offer={o} meta={meta} onOpen={() => { feedback('tap'); setOpenOffer(o) }} />)}
             </div>
           </section>
         )}
@@ -218,6 +270,7 @@ export function Hub({ career, meta, onAccept, onResume, onHome, onRetire, onOpen
           </div>
         </section>
       </div>
+      {openOffer && <OfferSheet offer={openOffer} meta={meta} onClose={() => setOpenOffer(null)} onAccept={() => { setOpenOffer(null); onAccept(openOffer.id) }} />}
       {confirmRetire && (
         <div className="modal-wrap" onClick={() => setConfirmRetire(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
@@ -233,31 +286,66 @@ export function Hub({ career, meta, onAccept, onResume, onHome, onRetire, onOpen
 
 const TAGS = { match: ['At your level', ''], safe: ['Safer job', 'safe'], stretch: ['Stretch', 'stretch'], basic: ['First job', ''], teaser: ['Score S to reach', 'teaser'] }
 
-function OfferCard({ offer, meta, onAccept }) {
+function OfferTile({ offer, meta, onOpen }) {
+  const b = BRIEFS[offer.briefId]
+  const [tagLabel, tagClass] = TAGS[offer.tag] || TAGS.match
+  const best = meta.best?.[offer.briefId]
+  return (
+    <button className={`offer-tile ${offer.locked ? 'locked' : ''}`} onClick={onOpen}>
+      <ProjectArt briefId={offer.briefId} size={72} />
+      <span className="ot-body">
+        <span className="ot-top"><span className="tier-badge mono">LV {offer.level}</span><span className={`offer-tag ${tagClass}`}>{tagLabel}</span>{offer.twist && <Icon name="info" size={14} className="ot-twist" />}</span>
+        <b>{b.name}</b>
+        <span className="mono dim">{money(offer.budget, true)} · {offer.lot.w}×{offer.lot.h} m{best ? ' · best ' : ''}{best && <GradeBadge g={best} />}</span>
+      </span>
+      {offer.locked ? <Icon name="lock" size={18} className="ot-go" /> : <Icon name="chevron" size={18} className="ot-go" />}
+    </button>
+  )
+}
+
+function OfferSheet({ offer, meta, onClose, onAccept }) {
   const b = BRIEFS[offer.briefId]
   const tw = offer.twist ? TWISTS[offer.twist] : null
-  const best = meta.best?.[offer.briefId]
   const [tagLabel, tagClass] = TAGS[offer.tag] || TAGS.match
+  const best = meta.best?.[offer.briefId]
+  const roomsList = b.rooms.map(r => `${r.count > 1 ? `${r.count}× ` : ''}${ROOMS[r.type].label} ≥ ${r.min} m²`)
+  const itemsN = b.items.reduce((s, it) => s + (it.count || 1), 0)
   return (
-    <article className={`offer ${offer.locked ? 'locked' : ''}`}>
-      <div className="offer-top">
-        <span className="tier-badge mono">LV {offer.level}</span>
-        <span className={`offer-tag ${tagClass}`}>{tagLabel}</span>
-        <span className="mono dim ind"><Icon name={INDUSTRIES[b.industry].icon} size={14} />{INDUSTRIES[b.industry].label}</span>
+    <div className="sheet-wrap" onClick={onClose}>
+      <div className="sheet offer-sheet" onClick={e => e.stopPropagation()} role="dialog" aria-label={b.name}>
+        <div className="os-hero">
+          <ProjectArt briefId={offer.briefId} size={112} />
+          <div>
+            <span className="row"><span className="tier-badge mono">LEVEL {offer.level}</span><span className={`offer-tag ${tagClass}`}>{tagLabel}</span></span>
+            <h3>{b.name}</h3>
+            <p className="client">{offer.client}</p>
+            <span className="mono dim ind"><Icon name={INDUSTRIES[b.industry].icon} size={14} /> {INDUSTRIES[b.industry].label}{best && <> · your studio's best <GradeBadge g={best} /></>}</span>
+          </div>
+          <button className="icon-btn os-close" onClick={onClose} aria-label="Close"><Icon name="x" /></button>
+        </div>
+        <div className="sheet-body">
+          <p className="blurb">{b.blurb}</p>
+          <div className="os-facts">
+            <div><span className="mono dim">BUDGET</span><b>{money(offer.budget, true)}</b></div>
+            <div><span className="mono dim">FEE AT S</span><b>{money(Math.round(feeFor(offer.level) * 1.6 * (tw?.fee || 1)), true)}</b></div>
+            <div><span className="mono dim">LOT</span><b>{offer.lot.w}×{offer.lot.h} m</b></div>
+            <div><span className="mono dim">FLOORS</span><b>{b.levels.min === b.levels.max ? b.levels.min : `${b.levels.min}–${b.levels.max}`}</b></div>
+          </div>
+          <div className="row wrap"><span className="mono dim">CLIENT TASTE</span>{offer.styles.map(st => <span key={st} className="tag-chip">{STYLES[st]}</span>)}</div>
+          {tw && <div className="twist"><b>{tw.name}</b><span>{tw.text}</span></div>}
+          <div className="os-program">
+            <span className="mono dim">PROGRAM</span>
+            <ul>{roomsList.map((t, i) => <li key={i}>{t}</li>)}</ul>
+            <span className="dim small">{itemsN} required pieces of furniture and equipment{b.needsLift && b.levels.max > 1 ? ' · lift required' : ''}</span>
+          </div>
+        </div>
+        <div className="os-foot">
+          {offer.locked
+            ? <span className="locked-note"><Icon name="lock" size={16} />Score S on your next project to reach this level</span>
+            : <button className="primary big" onClick={() => { feedback('stamp'); onAccept() }}><Icon name="stamp" size={18} />Accept project</button>}
+        </div>
       </div>
-      <h4>{b.name}</h4>
-      <p className="client">{offer.client}{best && <span className="best"> · your studio's best: <GradeBadge g={best} /></span>}</p>
-      <p className="blurb">{b.blurb}</p>
-      <div className="row wrap">{offer.styles.map(s => <span key={s} className="tag-chip">{STYLES[s]}</span>)}<span className="mono dim">{offer.lot.w}×{offer.lot.h} m · {b.levels.min === b.levels.max ? `${b.levels.min} floor${b.levels.min > 1 ? 's' : ''}` : `${b.levels.min}–${b.levels.max} floors`}</span></div>
-      {tw && <div className="twist small"><b>{tw.name}</b><span>{tw.text}</span></div>}
-      <div className="offer-foot">
-        <div><span className="mono dim">BUDGET</span><b>{money(offer.budget, true)}</b></div>
-        <div><span className="mono dim">FEE (S)</span><b>{money(Math.round(feeFor(offer.level) * 1.6 * (tw?.fee || 1)), true)}</b></div>
-        {offer.locked
-          ? <span className="locked-note"><Icon name="lock" size={16} />Locked</span>
-          : <button className="primary" onClick={() => { feedback('select'); onAccept() }}>Accept</button>}
-      </div>
-    </article>
+    </div>
   )
 }
 
@@ -380,7 +468,7 @@ export function Review({ entry, career, onContinue, onRetry, onAbandon }) {
           </div>
           <div className="review-head">
             <span className="mono dim">REVIEW · {entry.client.toUpperCase()} · LEVEL {b.level}</span>
-            <h2>{b.name}</h2>
+            <div className="row"><ProjectArt briefId={entry.briefId} size={44} /><h2>{b.name}</h2></div>
             <div className="big-score">
               <span className={`grade-reveal ${revealed ? 'in' : ''}`}><GradeBadge g={entry.grade} big /></span>
               <div><span className="num mono" aria-label={`${s.overall} out of 100`}>{count}</span><b>{grade.label}</b></div>
@@ -501,7 +589,7 @@ export function Legacy({ meta, onBack }) {
         {meta.legacy.map(l => (
           <section key={l.id} className="plaque">
             <div className="plaque-head">
-              <div><h3>{l.name}</h3><p className="dim">“{l.title}” · {l.rank}</p></div>
+              <div><h3>{l.profile?.country ? `${flag(l.profile.country)} ` : ''}{l.name}</h3><p className="dim">“{l.title}” · {l.rank}{l.profile?.background ? ` · ${BACKGROUNDS[l.profile.background]?.label}` : ''}</p></div>
               <div className="plaque-stats mono"><span>{l.commissions} works</span><span>avg {l.average}</span><span>top L{l.topLevel ?? '–'}</span><span className={l.status !== 'retired' ? 'bad' : ''}>{l.status}</span></div>
             </div>
             <Portfolio works={l.works} />
@@ -513,15 +601,31 @@ export function Legacy({ meta, onBack }) {
 }
 
 export function WorkModal({ work, onClose }) {
+  const p = work.project
+  const [view, setView] = useState('exterior')
+  const [lvl, setLvl] = useState(0)
+  const views = p ? [['exterior', 'Exterior', 'cube'], ['cutaway', 'Cutaway', 'section'], ['plan', 'Plan', 'plan'], ['night', 'Night', 'moon']] : []
   return (
     <div className="modal-wrap" onClick={onClose}>
       <div className="modal work-modal" onClick={e => e.stopPropagation()}>
-        <div className="work-3d">{work.project ? <View3D project={work.project} /> : <img src={work.thumb} alt="" />}</div>
+        <div className="work-3d">
+          {!p ? <img src={work.thumb} alt="" />
+            : view === 'plan' ? <PlanView project={p} li={lvl} tool="select" onTap={() => {}} />
+              : <View3D project={p} cutLevel={view === 'cutaway' ? lvl : null} night={view === 'night'} />}
+          {p && (
+            <div className="work-views">
+              {views.map(([id, label, icon]) => <button key={id} className={`chip ${view === id ? 'on' : ''}`} onClick={() => { feedback('tap'); setView(id) }}><Icon name={icon} size={15} />{label}</button>)}
+            </div>
+          )}
+          {p && (view === 'cutaway' || view === 'plan') && p.levels.length > 1 && (
+            <div className="work-levels">{[...p.levels.keys()].reverse().map(i => <button key={i} className={`lvl ${i === lvl ? 'on' : ''}`} onClick={() => setLvl(i)}>L{i + 1}</button>)}</div>
+          )}
+        </div>
         <div className="row between">
-          <div><h3>{BRIEFS[work.briefId].name}</h3><p className="dim small">{work.client}</p></div>
+          <div className="row"><ProjectArt briefId={work.briefId} size={44} /><div><h3>{BRIEFS[work.briefId].name}</h3><p className="dim small">{work.client}</p></div></div>
           <div className="row"><GradeBadge g={work.grade} /><b className="mono">{work.scores.overall}</b></div>
         </div>
-        <div className="row mono dim small"><span>F {work.scores.functionality}</span><span>R {work.scores.requirements}</span><span>A {work.scores.aesthetics}</span><span>B {work.scores.budget ?? '–'}</span><span>+{money(work.fee || 0, true)}</span></div>
+        <div className="row mono dim small wrap"><span>F {work.scores.functionality}</span><span>R {work.scores.requirements}</span><span>A {work.scores.aesthetics}</span><span>B {work.scores.budget ?? '–'}</span><span>+{money(work.fee || 0, true)}</span></div>
         <div className="row end"><button className="ghost" onClick={onClose}>Close</button></div>
       </div>
     </div>

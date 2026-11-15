@@ -62,10 +62,10 @@ export default function App() {
   useEffect(() => { persist(save) }, [save])
   const update = (patch) => setSave(s => ({ ...s, ...patch }))
 
-  const startCareer = ({ name }) => {
+  const startCareer = ({ name, profile }) => {
     let m = meta
     if (career) m = archiveCareer(m, career.status === 'active' ? retireEarly(career) : career)
-    update({ meta: m, career: newCareer(m, { name }) })
+    update({ meta: m, career: newCareer(m, { name, profile }) })
     setScreen('hub')
   }
 

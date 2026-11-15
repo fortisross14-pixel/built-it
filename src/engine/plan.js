@@ -482,6 +482,9 @@ export function projectCost(project, kit = []) {
   finishes += paint
   let total = shell + finishes + items + openings + facade
   if (kit.includes('contractor')) total *= 0.88
+  const bgId = kit.find(k => k.startsWith('bg:'))
+  if (bgId === 'bg:business') total *= 0.9
+  if (bgId === 'bg:architect') total *= 0.975
   return { total: Math.round(total), shell: Math.round(shell), finishes: Math.round(finishes), items, openings, facade: Math.round(facade) }
 }
 

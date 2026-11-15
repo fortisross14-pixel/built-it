@@ -9,7 +9,7 @@ function load() {
   let s = {}
   try { s = JSON.parse(localStorage.getItem(KEY)) || {} } catch { /* default settings */ }
   const osReduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
-  return { sound: true, haptics: true, reduceMotion: osReduce, ...s }
+  return { sound: true, haptics: true, reduceMotion: osReduce, theme: 'studio', ...s }
 }
 export let settings = load()
 
@@ -21,7 +21,11 @@ export function setSetting(k, v) {
 }
 export function onSettings(fn) { listeners.add(fn); return () => listeners.delete(fn) }
 export function applyMotionClass() {
-  if (typeof document !== 'undefined') document.documentElement.classList.toggle('reduce-motion', !!settings.reduceMotion)
+  if (typeof document === 'undefined') return
+  document.documentElement.classList.toggle('reduce-motion', !!settings.reduceMotion)
+  document.documentElement.dataset.theme = settings.theme || 'studio'
+  const meta = document.querySelector('meta[name="theme-color"]')
+  if (meta) meta.content = { studio: '#121519', blueprint: '#0b2341', atelier: '#efe8dc' }[settings.theme] || '#121519'
 }
 
 // ---------------------------------------------------------------- audio

@@ -25,6 +25,16 @@ A roguelite architecture game. Start as a junior architect with a corner shop. G
 
 Ten commissions per career, and three strikes closes the studio. Finished careers go to the legacy hall.
 
+## Architects
+Every new architect picks a name, age, gender, country and a background:
+- **Pure architect:** a quarter of each bonus below, across all four ratings.
+- **Architect + art:** +6 Aesthetics.
+- **Architect + engineering:** missed requirements cost 30% fewer points.
+- **Architect + business:** construction costs −10%.
+
+## Styles and art
+Settings has three visual styles: **Drafting Studio** (dark CAD), **Blueprint** (cyanotype) and **Atelier** (warm paper, serif). Project icons load from `public/art/projects/<id>.png`. See `ART_PROMPTS.md` for the image prompts and `scripts/slice-art.cjs` to cut a 6×4 grid into tiles.
+
 ## Controls
 - Plan: one finger uses the tool, two fingers pan and pinch-zoom. Mouse: wheel zooms, right-drag pans.
 - 3D: drag to orbit, pinch to zoom.

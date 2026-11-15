@@ -46,9 +46,10 @@ export function newMeta() {
   return { unlocked: [], legacy: [], careers: 0, best: {}, version: 2 }
 }
 
-export function newCareer(meta, { name, seed = Date.now() }) {
+export function newCareer(meta, { name, profile = {}, seed = Date.now() }) {
   const career = {
     id: `c${seed.toString(36)}`, name, seed,
+    profile: { age: 27, gender: 'Prefer not to say', country: '', background: 'architect', ...profile },
     level: 1, cash: START_CASH, packs: [], rep: 0, strikes: 0, maxStrikes: 3, maxCommissions: 10,
     portfolio: [], offers: [], current: null, pending: null, lastGrade: null, status: 'active',
     startedAt: Date.now(), number: meta.careers + 1,
@@ -198,7 +199,11 @@ export function buyPack(career, id) {
   return { career: { ...career, cash: career.cash - pack.price, packs: [...career.packs, id] } }
 }
 
-export function perks(career) { return (career?.packs || []).filter(id => PACKS[id]?.perk) }
+export function perks(career) {
+  const out = (career?.packs || []).filter(id => PACKS[id]?.perk)
+  if (career?.profile?.background) out.push(`bg:${career.profile.background}`)
+  return out
+}
 
 export function legacyTitle(career) {
   const n = career.portfolio.length
@@ -217,7 +222,7 @@ export function legacyTitle(career) {
 export function archiveCareer(meta, career) {
   const n = career.portfolio.length
   const summary = {
-    id: career.id, name: career.name, status: career.status,
+    id: career.id, name: career.name, status: career.status, profile: career.profile,
     rep: career.rep, rank: rankFor(career.rep).title, title: legacyTitle(career),
     commissions: n, topLevel: Math.max(0, ...career.portfolio.map(p => p.offer.level)),
     average: n ? Math.round(career.portfolio.reduce((s, p) => s + p.scores.overall, 0) / n) : 0,
