@@ -1,14 +1,14 @@
 // Review engine: scores a project on Functionality, Requirements and Aesthetics.
-import { CEILINGS, COMPLEMENTS, DOORS, ITEMS, MATERIALS, PAINTS, ROOMS, STYLES, defaultProduct, familyOf, itemSize, productDef, q } from '../game/catalog.js'
-import { BRIEFS, GRADES, TWISTS, gradeFor, reqLabel } from '../game/briefs.js'
+import { CEILINGS, COMPLEMENTS, DOORS, ITEMS, MATERIALS, PAINTS, ROOFS, ROOMS, STYLES, defaultProduct, familyOf, itemSize, productDef, q } from '../game/catalog.js'
+import { BRIEFS, GRADES, TWISTS, checksFor, featuresFor, gradeFor, reqLabel } from '../game/briefs.js'
 import { bgOf } from '../game/architects.js'
-import { cellOwners, ck, edgeCells, footprint, inRoom as inRoomCell, itemCells, projectCost, roomArea, roomAt, roomCells, verticalLinks, wallEdges } from './plan.js'
+import { cellOwners, ck, edgeCells, footprint, inRoom as inRoomCell, itemCells, itemConflict, placeBasics, projectCost, roomArea, roomAt, roomCells, verticalLinks, wallEdges } from './plan.js'
 
 const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v))
 const avg = (a) => a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0
 
 // ---------------------------------------------------------------- circulation
-export function circulation(project) {
+export function circulation(project, seeds = null) {
   const levels = project.levels
   const blocked = levels.map(level => {
     const s = new Set()
@@ -51,9 +51,10 @@ export function circulation(project) {
 
   const dist = new Map()
   const q = []
-  for (const e of entrances) {
-    if (!walkable(0, e.x, e.y)) continue
-    const k = `0:${e.x}:${e.y}`
+  const starts = seeds || entrances.map(e => `0:${e.x}:${e.y}`)
+  for (const k of starts) {
+    const [li, x, y] = k.split(':').map(Number)
+    if (!walkable(li, x, y)) continue
     if (!dist.has(k)) { dist.set(k, 0); q.push(k) }
   }
   for (let i = 0; i < q.length; i++) {
@@ -127,12 +128,29 @@ function adjacencyState(project, a, b) {
   return best
 }
 
+// Tall furniture (shelving, chillers, lockers…) pushed against a window blocks its daylight.
+function tallCells(level) {
+  const s = new Set()
+  for (const it of level.items) if (ITEMS[it.type].tall) for (const c of itemCells(it)) s.add(ck(c.x, c.y))
+  return s
+}
+function windowBlocked(e, tall) {
+  const inside = { x: e.x1 - (e.nx > 0 ? 1 : 0), y: e.y1 - (e.ny > 0 ? 1 : 0) }
+  return tall.has(ck(inside.x, inside.y))
+}
+export function blockedWindows(project) {
+  let n = 0
+  project.levels.forEach(level => { const edges = wallEdges(level), tall = tallCells(level); for (const k of level.windows) { const e = edges.get(k); if (e && windowBlocked(e, tall)) n++ } })
+  return n
+}
+
 export function daylitRooms(project) {
   const glazed = MATERIALS[project.facade]?.glazed
   const set = new Set()
   project.levels.forEach(level => {
     const edges = wallEdges(level)
-    for (const key of level.windows) { const e = edges.get(key); if (e) set.add(e.a) }
+    const blocked = tallCells(level)
+    for (const key of level.windows) { const e = edges.get(key); if (e && !windowBlocked(e, blocked)) set.add(e.a) }
     if (glazed) for (const e of edges.values()) if (e.exterior) set.add(e.a)
     for (const it of level.items) {
       if (it.type !== 'skylight') continue
@@ -150,11 +168,14 @@ export function evaluate(project, offer, kit = []) {
   const brief = offerBrief(offer)
   const twist = offer.twist ? TWISTS[offer.twist] : null
   const rooms = allRooms(project)
-  const items = allItems(project)
+  // Overlapping items (e.g. rotated into something) are drawn red in the editor and don't count.
+  const conflicts = allItems(project).filter(it => itemConflict(project, it.li, it))
+  const conflictIds = new Set(conflicts.map(it => it.id))
+  const items = allItems(project).filter(it => !conflictIds.has(it.id))
   const circ = circulation(project)
   const notes = []
   const checklist = []
-  const note = (group, label, value, good, bad) => notes.push({ group, label, value: clamp(value), text: value >= 0.75 ? good : bad })
+  const note = (group, label, value, good, bad, detail = []) => notes.push({ group, label, value: clamp(value), text: value >= 0.75 ? good : bad, detail: value >= 0.99 ? [] : detail })
 
   // ---------------- Functionality
   const hasEntrance = circ.entrances.length > 0
@@ -226,6 +247,24 @@ export function evaluate(project, offer, kit = []) {
   const equipQ = useful.length ? avg(useful.map(it => q(it.q).score)) : 0
   note('functionality', 'Equipment quality', equipQ, 'Quality furniture and equipment that will last.', 'Cheap equipment: staff are already complaining.')
 
+  // Misplaced items: allowed anywhere, but a drinks station in the WC works badly.
+  const misfits = useful.filter(it => placeBasics(project, it.li, it).misfit)
+  const placement = useful.length ? 1 - misfits.length / useful.length : 1
+  note('functionality', 'Item placement', placement, 'Every piece is in the room it belongs in.', `${misfits.length} item(s) sit in the wrong kind of room.`,
+    misfits.slice(0, 6).map(it => `${ITEMS[it.type].label} in the ${(roomAt(project.levels[it.li], it.x, it.y) ? ROOMS[roomAt(project.levels[it.li], it.x, it.y).type].label : 'room').toLowerCase()}`))
+  if (conflicts.length) {
+    note('functionality', 'Overlapping items', 0, '', `${conflicts.length} item(s) overlap something and don't count until you move them.`, conflicts.slice(0, 6).map(it => ITEMS[it.type].label))
+    checklist.push({ label: 'No overlapping items', ok: false, detail: `${conflicts.length} in red`, kind: 'conflict' })
+  }
+
+  // Key layout checks for this building type: walking distance, graded Close / Mid / Far.
+  const keyChecks = checksFor(offer.briefId).map(c => measureCheck(project, circ, c))
+  for (const k of keyChecks) checklist.push({ label: k.label, ok: k.value >= 0.9, value: k.value, detail: k.tier + (Number.isFinite(k.dist) ? ` · ${k.dist.toFixed(0)} m` : ''), kind: 'check' })
+  const checkW = keyChecks.reduce((s, k) => s + k.w, 0)
+  const checkScore = checkW ? keyChecks.reduce((s, k) => s + k.value * k.w, 0) / checkW : 1
+  if (keyChecks.length) note('functionality', 'Key layout checks', checkScore, 'The routes that matter for this building are short.',
+    'Key routes for this building are too long or disconnected.', keyChecks.filter(k => k.value < 0.9).map(k => `${k.label}: ${k.tier.toLowerCase()}${Number.isFinite(k.dist) ? ` (${k.dist.toFixed(0)} m)` : ''}. ${k.why}`))
+
   // Merchandising: departments grouped together, complements side by side, tills by the door.
   const merch = project.levels.map(level => merchandise(level, project.levels.indexOf(level) === 0 ? circ.entrances : []))
   const merchItems = merch.reduce((s, m) => s + m.count, 0)
@@ -239,14 +278,18 @@ export function evaluate(project, offer, kit = []) {
       worst?.why || 'Products are scattered: group departments and put complements together.')
     checklist.push({ label: 'Merchandising', ok: merchScore >= 0.75, detail: `${Math.round(merchScore * 100)}%`, kind: 'merch' })
   }
-  let functionality = 100 * (0.25 * reach + 0.17 * access + 0.12 * distScore + (brief.adj.length ? 0.18 : 0) * adj + 0.05 * crowd + 0.05 * wet + 0.05 * lift + 0.07 * lighting + 0.06 * equipQ + merchW * merchScore)
-  functionality /= (brief.adj.length ? 1 : 0.82) + merchW
+  const checksW = keyChecks.length ? 0.2 : 0
+  let functionality = 100 * (0.25 * reach + 0.17 * access + 0.12 * distScore + (brief.adj.length ? 0.18 : 0) * adj + 0.05 * crowd + 0.05 * wet + 0.05 * lift + 0.07 * lighting + 0.06 * equipQ + merchW * merchScore + checksW * checkScore + 0.06 * placement)
+  functionality /= (brief.adj.length ? 1 : 0.82) + merchW + checksW + 0.06
+  functionality -= Math.min(25, conflicts.length * 5)
   // Signature pieces: each distinct boosted item type adds once (unlocks are meant to feel good).
   const boostTypes = new Set(items.map(it => it.type).filter(t => ITEMS[t].boost))
   let boostF = [...boostTypes].reduce((s, t) => s + (ITEMS[t].boost.f || 0), 0)
   let boostA = [...boostTypes].reduce((s, t) => s + (ITEMS[t].boost.a || 0), 0)
   const door = DOORS[project.door] || DOORS.standard
   boostF += door.boost?.f || 0; boostA += door.boost?.a || 0
+  const roof = ROOFS[project.roof] || ROOFS.gravel
+  boostF += roof.boost?.f || 0; boostA += roof.boost?.a || 0
   boostF += Math.min(2, rooms.reduce((s, r) => s + (CEILINGS[r.ceiling]?.boost?.f || 0), 0))
   boostF = Math.min(10, boostF); boostA = Math.min(12, boostA)
   functionality += boostF
@@ -255,6 +298,10 @@ export function evaluate(project, offer, kit = []) {
   if (kit.includes('mentor')) functionality += 5
   const bg = bgOf(kit)
   if (bg?.func) functionality += bg.func
+  if (kit.includes(`exp:${brief.industry}`)) {
+    functionality += 5
+    notes.push({ group: 'functionality', label: 'Expertise', value: 1, text: 'Your specialist knows this building type inside out (+5).' })
+  }
 
   // ---------------- Requirements
   const slots = []
@@ -314,14 +361,31 @@ export function evaluate(project, offer, kit = []) {
     extra.push(s)
     checklist.push({ label: 'Daylight in every lived-in room', ok: s === 1, detail: `${hab.filter(r => lit.has(r.id)).length}/${hab.length}` })
   }
+  // Signature features for this building type (booths, gendered restrooms, premium seating, finishes…).
+  const feats = featuresFor(offer.briefId).map(f => measureFeature(project, f))
+  for (const f of feats) checklist.push({ label: f.label + (f.bonus ? ' (bonus)' : ''), ok: f.value >= 0.99, value: f.value, detail: f.detail, kind: 'feature' })
+  const reqFeats = feats.filter(f => !f.bonus)
+  const featW = reqFeats.reduce((s, f) => s + f.w, 0)
+  const featScore = featW ? reqFeats.reduce((s, f) => s + f.value * f.w, 0) / featW : 1
+  const featBonus = Math.min(6, feats.filter(f => f.bonus && f.value >= 0.99).length * 3)
+  if (reqFeats.length) note('requirements', 'Signature features', featScore, 'Everything this kind of client expects is here.', 'Missing what this kind of client expects.',
+    reqFeats.filter(f => f.value < 0.99).map(f => `${f.label}: ${f.detail}. ${f.why}`))
+  const roomMissing = checklist.filter(c => c.kind === 'room' && !c.ok).map(c => `${c.label} (${c.detail})`)
+  const itemMissing = checklist.filter(c => c.kind === 'item' && !c.ok).map(c => `${c.label} (${c.detail})`)
+  const rn = notes.find(n => n.label === 'Room program'); if (rn && rn.value < 0.75) rn.detail = roomMissing
+  const iN = notes.find(n => n.label === 'Furniture & equipment'); if (iN && iN.value < 0.75) iN.detail = itemMissing
   let requirements = 100 * (0.45 * roomScore + 0.4 * itemScore + 0.15 * levelsOk)
+  if (featW) requirements = requirements * 0.8 + 20 * featScore
+  requirements += featBonus
   if (extra.length) requirements = requirements * (1 - 0.12 * extra.length) + 100 * 0.12 * extra.reduce((s, v) => s + v, 0)
 
   // ---------------- Aesthetics
   const lit = daylitRooms(project)
   const hab = rooms.filter(r => ROOMS[r.type]?.habitable)
   const daylight = hab.length ? hab.filter(r => lit.has(r.id)).length / hab.length : (rooms.length ? 0.5 : 0)
-  note('aesthetics', 'Daylight', daylight, 'Lived-in rooms are full of daylight.', 'Too many rooms people spend time in have no window.')
+  const blockedN = blockedWindows(project)
+  note('aesthetics', 'Daylight', daylight, 'Lived-in rooms are full of daylight.', 'Too many rooms people spend time in have no natural light.',
+    [...hab.filter(r => !lit.has(r.id)).slice(0, 6).map(r => `${ROOMS[r.type].label} has no window or skylight`), ...(blockedN ? [`${blockedN} window(s) blocked by tall furniture`] : [])])
 
   const propRooms = rooms.filter(r => !ROOMS[r.type]?.circulation)
   const proportion = propRooms.length ? propRooms.reduce((s, r) => {
@@ -340,8 +404,12 @@ export function evaluate(project, offer, kit = []) {
   const paintMatch = totalArea ? rooms.reduce((s, r) => s + ((PAINTS[r.wall]?.tags || []).some(t => offer.styles.includes(t)) ? roomArea(r) : 0), 0) / totalArea : 0
   const ceilMatch = totalArea ? rooms.reduce((s, r) => s + ((CEILINGS[r.ceiling || 'plain']?.tags || []).some(t => offer.styles.includes(t)) ? roomArea(r) : 0), 0) / totalArea : 0
   const doorMatch = door.tags.some(t => offer.styles.includes(t)) ? 1 : 0
-  const style = rooms.length ? 0.25 * (matches(project.facade) ? 1 : 0) + 0.37 * floorMatch + 0.2 * paintMatch + 0.12 * ceilMatch + 0.06 * doorMatch : 0
-  note('aesthetics', 'Style fit', style, `Materials nail the ${offer.styles.map(s => STYLES[s].toLowerCase()).join(' / ')} brief.`, `The client wanted something ${offer.styles.map(s => STYLES[s].toLowerCase()).join(' and ')}. Materials missed it.`)
+  const roofMatch = roof.tags.some(t => offer.styles.includes(t)) ? 1 : 0
+  const style = rooms.length ? 0.24 * (matches(project.facade) ? 1 : 0) + 0.35 * floorMatch + 0.2 * paintMatch + 0.12 * ceilMatch + 0.05 * doorMatch + 0.04 * roofMatch : 0
+  note('aesthetics', 'Style fit', style, `Materials nail the ${offer.styles.map(s => STYLES[s].toLowerCase()).join(' / ')} brief.`, `The client wanted something ${offer.styles.map(s => STYLES[s].toLowerCase()).join(' and ')}. Materials missed it.`,
+    [...(!matches(project.facade) ? [`Facade (${MATERIALS[project.facade]?.label}) isn't ${offer.styles.map(x => STYLES[x].toLowerCase()).join(' or ')}`] : []),
+     ...rooms.filter(r => !(MATERIALS[r.floor]?.tags || []).some(t => offer.styles.includes(t))).slice(0, 3).map(r => `${ROOMS[r.type].label} floor (${MATERIALS[r.floor]?.label}) doesn't match the taste`),
+     ...rooms.filter(r => !(PAINTS[r.wall]?.tags || []).some(t => offer.styles.includes(t))).slice(0, 3).map(r => `${ROOMS[r.type].label} walls (${PAINTS[r.wall]?.label || 'paint'}) don't match the taste`)])
 
   const distinct = new Set([project.facade, ...floorArea.keys()]).size
   const palette = !rooms.length ? 0 : distinct <= 1 ? 0.5 : distinct <= 4 ? 1 : distinct === 5 ? 0.75 : 0.45
@@ -373,7 +441,12 @@ export function evaluate(project, offer, kit = []) {
   const roomQ = totalArea ? rooms.reduce((s, r) => s + (q(r.floorQ).score + q(r.wallQ).score) / 2 * roomArea(r), 0) / totalArea : 0
   const decoItems = items.filter(it => ITEMS[it.type].layer === 'decor' || ITEMS[it.type].group === 'Furniture')
   const finishQ = decoItems.length ? 0.65 * roomQ + 0.35 * avg(decoItems.map(it => q(it.q).score)) : roomQ
-  note('aesthetics', 'Finish quality', finishQ, 'Beautifully crafted finishes and furniture.', 'Cheap finishes show. Paint is already peeling.')
+  const premiumDeco = decoItems.filter(it => (it.q ?? 1) >= 2).length
+  note('aesthetics', 'Finish quality', finishQ, 'Beautifully crafted finishes and furniture.', 'Cheap finishes show. Paint is already peeling.',
+    [...rooms.filter(r => (r.floorQ ?? 1) === 0 || (r.wallQ ?? 1) === 0).slice(0, 3).map(r => `${ROOMS[r.type].label}: basic-grade ${(r.floorQ ?? 1) === 0 ? 'floor' : 'paint'}`),
+     ...(decoItems.length && premiumDeco === 0 ? ['No premium furniture or decoration anywhere'] : []),
+     ...(decoItems.filter(it => (it.q ?? 1) === 0).length ? [`${decoItems.filter(it => (it.q ?? 1) === 0).length} pieces are the cheapest grade`] : []),
+     ...(!decoItems.length ? ['No furniture or decoration to show off'] : [])])
   const mood = clamp(lights.reduce((s, it) => s + ITEMS[it.type].ambience * q(it.q).score, 0) / Math.max(1, hab.length * 1.2))
   note('aesthetics', 'Lighting mood', mood, 'Warm, layered lighting gives it atmosphere at night.', 'Flat, office-style lighting kills the mood. Try pendants or a chandelier.')
 
@@ -417,7 +490,25 @@ export function critique(result, offer) {
     2: ['“We can live with it, but it is not what we asked for.”'],
     1: ['“We are going to need to talk to our lawyers.”'],
   }[result.stars][0]
-  return { head, praise, gripes }
+  return { head, praise, gripes, breakdown: breakdown(result, offer) }
+}
+
+// Per-rating detail for the review screen: what earned or cost points, worst first.
+export function breakdown(result, offer) {
+  const fromNotes = (g) => result.notes.filter(n => n.group === g).map(n => ({ label: n.label, value: Math.round(n.value * 100) / 100, text: n.text, detail: n.detail || [] }))
+  const fromList = (kinds) => result.checklist.filter(c => kinds.includes(c.kind || 'building')).map(c => ({ label: c.label, value: c.value ?? (c.ok ? 1 : 0), text: c.detail || '', detail: [], check: true }))
+  const sort = (a) => a.sort((x, y) => x.value - y.value)
+  const c = result.cost
+  const over = c.total - offer.budget
+  return {
+    functionality: sort([...fromList(['check', 'conflict', 'adj', 'merch', 'light', 'building']), ...fromNotes('functionality')]),
+    requirements: sort([...fromList(['room', 'item', 'feature']), ...fromNotes('requirements')]),
+    aesthetics: sort(fromNotes('aesthetics')),
+    budget: [
+      { label: over > 0 ? 'Over budget' : 'Within budget', value: over > 0 ? Math.max(0, 1 - over / offer.budget * 3) : 1, text: `${Math.round(c.total / 1000)}k spent of ${Math.round(offer.budget / 1000)}k`, detail: [] },
+      { label: 'Where the money went', value: 1, text: '', detail: [['Structure', c.shell], ['Finishes & roof', c.finishes], ['Furniture & equipment', c.items], ['Doors & windows', c.openings], ['Facade', c.facade]].filter(([, v]) => v).map(([k, v]) => `${k}: ${Math.round(v / 1000)}k`) },
+    ],
+  }
 }
 
 // ---------------------------------------------------------------- merchandising
@@ -464,4 +555,87 @@ export function merchandise(level, entrances = []) {
   }
   const W = parts.reduce((s, p) => s + p.w, 0)
   return { score: W ? parts.reduce((s, p) => s + p.v * p.w, 0) / W : 1, count: goods.length, links, parts }
+}
+
+// ---------------------------------------------------------------- key checks & features
+function accessCells(project, circ, li, it) {
+  const cells = itemCells(it), own = new Set(cells.map(c => ck(c.x, c.y)))
+  const room = circ.owners[li].get(ck(cells[0].x, cells[0].y))
+  const out = []
+  for (const c of cells) {
+    if (ITEMS[it.type].walkable && circ.walkable(li, c.x, c.y)) out.push(`${li}:${c.x}:${c.y}`)
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = c.x + dx, ny = c.y + dy
+      if (own.has(ck(nx, ny)) || !circ.walkable(li, nx, ny)) continue
+      if (room && circ.owners[li].get(ck(nx, ny))?.id !== room.id) continue
+      out.push(`${li}:${nx}:${ny}`)
+    }
+  }
+  return out
+}
+function specCells(project, circ, spec) {
+  if (spec === 'entrance') return circ.entrances.map(e => `0:${e.x}:${e.y}`)
+  const [k, v] = spec.split(':')
+  if (k === 'room' || k === 'rooms') {
+    const out = []
+    project.levels.forEach((l, li) => l.rooms.filter(r => r.type === v).forEach(r => roomCells(r).forEach(c => out.push(`${li}:${c}`))))
+    return out
+  }
+  const types = v.split(',')
+  return project.levels.flatMap((l, li) => l.items.filter(it => types.includes(it.type)).flatMap(it => accessCells(project, circ, li, it)))
+}
+function specTargets(project, circ, spec) {
+  const [k, v] = spec.split(':')
+  if (k === 'room') { const cells = specCells(project, circ, spec); return cells.length ? [{ cells }] : [] }
+  if (k === 'rooms') return project.levels.flatMap((l, li) => l.rooms.filter(r => r.type === v).map(r => ({ cells: roomCells(r).map(c => `${li}:${c}`) })))
+  const types = v.split(',')
+  return project.levels.flatMap((l, li) => l.items.filter(it => types.includes(it.type)).map(it => {
+    const outdoors = li === 0 && !roomAt(l, it.x, it.y)
+    return { cells: accessCells(project, circ, li, it), outdoors: outdoors ? it : null }
+  }))
+}
+const tierOf = (d, c) => !Number.isFinite(d) ? 0 : d <= c.close ? 1 : d <= c.mid ? 0.6 : 0.25
+
+export function measureCheck(project, circ, c) {
+  const seeds = specCells(project, circ, c.from)
+  const targets = specTargets(project, circ, c.to)
+  const base = { id: c.id, label: c.label, why: c.why, w: c.w }
+  if (!seeds.length || !targets.length) return { ...base, value: 0, dist: NaN, tier: 'Missing' }
+  const field = circulation(project, seeds).dist
+  const dists = targets.map(t => {
+    let d = Math.min(Infinity, ...t.cells.map(k => field.get(k) ?? Infinity))
+    // Outdoor pieces (terrace tables): walk to the nearest street door, then across the terrace.
+    if (t.outdoors) for (const e of circ.entrances) { const fd = field.get(`0:${e.x}:${e.y}`); if (fd !== undefined) d = Math.min(d, fd + Math.abs(e.x - t.outdoors.x) + Math.abs(e.y - t.outdoors.y)) }
+    return d
+  })
+  const value = c.mode === 'min' ? tierOf(Math.min(...dists), c) : dists.reduce((s, d) => s + tierOf(d, c), 0) / dists.length
+  const finite = dists.filter(Number.isFinite)
+  const dist = !finite.length ? NaN : c.mode === 'min' ? Math.min(...finite) : finite.reduce((s, d) => s + d, 0) / finite.length
+  const tier = !finite.length ? 'Not connected' : value >= 0.9 ? 'Close' : value >= 0.5 ? 'Mid' : 'Far'
+  return { ...base, value, dist, tier }
+}
+
+export function measureFeature(project, f) {
+  const items = project.levels.flatMap(l => l.items)
+  const rooms = project.levels.flatMap(l => l.rooms)
+  const base = { id: f.id, label: f.label, why: f.why, w: f.w, bonus: !!f.bonus }
+  if (f.kind === 'has') { const n = items.filter(it => f.types.includes(it.type)).length; return { ...base, value: n ? 1 : 0, detail: n ? `${n} placed` : 'none' } }
+  if (f.kind === 'gender') {
+    const rs = rooms.filter(r => r.type === f.room)
+    const w = rs.some(r => r.gender === 'women'), m = rs.some(r => r.gender === 'men')
+    return { ...base, value: (w ? 0.5 : 0) + (m ? 0.5 : 0), detail: w && m ? 'women + men' : w ? "no men's room" : m ? "no women's room" : 'not assigned (set it in the room bubble)' }
+  }
+  if (f.kind === 'premium') {
+    const list = items.filter(it => f.types.includes(it.type))
+    if (!list.length) return { ...base, value: 0, detail: 'none placed' }
+    const share = list.filter(it => (it.q ?? 1) === 2).length / list.length
+    return { ...base, value: clamp(share / f.share), detail: `${Math.round(share * 100)}% premium` }
+  }
+  if (f.kind === 'finish') {
+    const area = rooms.reduce((s, r) => s + roomArea(r), 0)
+    if (!area) return { ...base, value: 0, detail: 'no rooms' }
+    const qv = rooms.reduce((s, r) => s + (q(r.floorQ).score + q(r.wallQ).score) / 2 * roomArea(r), 0) / area
+    return { ...base, value: clamp((qv - 0.45) / (f.min - 0.45)), detail: qv >= f.min ? 'premium' : qv >= 0.75 ? 'standard' : 'basic' }
+  }
+  return { ...base, value: 1, detail: '' }
 }

@@ -1,7 +1,7 @@
 // Plan model: rooms are axis-aligned rectangles on a 1 m grid, per level.
 // Walls are derived from room perimeters; doors and windows live on wall edges.
 // Edge keys: "h:x:y" = top edge of cell (x,y); "v:x:y" = left edge of cell (x,y).
-import { BASE_COST, CEILINGS, DOORS, ITEMS, MATERIALS, ROOMS, itemCost, itemSize, q } from '../game/catalog.js'
+import { BASE_COST, CEILINGS, DOORS, ITEMS, MATERIALS, ROOFS, ROOMS, itemCost, itemSize, q } from '../game/catalog.js'
 
 let counter = 0
 export function uid(prefix = 'id') {
@@ -333,7 +333,9 @@ export function itemCells(item) {
   return out
 }
 
-export function canPlaceItem(project, li, item, ignoreId = null) {
+// Structural rules: inside the lot, inside one room (any room: the wrong room only costs
+// Functionality), or outdoors on the ground floor when the item can live outside.
+export function placeBasics(project, li, item) {
   const def = ITEMS[item.type]
   if (!def) return { ok: false, error: 'Unknown item.' }
   const level = project.levels[li]
@@ -342,20 +344,30 @@ export function canPlaceItem(project, li, item, ignoreId = null) {
   if (cells.some(c => c.x < 0 || c.y < 0 || c.x >= lot.w || c.y >= lot.h)) return { ok: false, error: 'Outside the lot.' }
   const owners = cellOwners(level)
   const rooms = new Set(cells.map(c => owners.get(ck(c.x, c.y))?.id || null))
-  let room = null
-  if (rooms.size === 1 && !rooms.has(null)) room = owners.get(ck(cells[0].x, cells[0].y))
+  const room = rooms.size === 1 && !rooms.has(null) ? owners.get(ck(cells[0].x, cells[0].y)) : null
   const outdoors = rooms.size === 1 && rooms.has(null)
+  if (rooms.size > 1) return { ok: false, error: `${def.label} can't straddle a wall.` }
   if (def.site === true) {
     if (li !== 0) return { ok: false, error: `${def.label} goes on the ground-floor site.` }
     if (!outdoors) return { ok: false, error: `${def.label} goes outside, on the site.` }
-  } else if (def.site === 'both' && outdoors) {
-    if (li !== 0) return { ok: false, error: 'Outdoor pieces go on the ground floor.' }
-  } else {
-    if (!room) return { ok: false, error: `${def.label} must sit fully inside one room.` }
-    if (def.rooms && !def.rooms.includes(room.type)) {
-      return { ok: false, error: `${def.label} belongs in: ${def.rooms.map(t => ROOMS[t].label).join(', ')}.` }
-    }
+    return { ok: true, room: null, outdoors: true }
   }
+  if (outdoors) {
+    if (def.ceiling) return { ok: false, error: 'Ceiling lights need a ceiling: place them inside a room.' }
+    if (!(def.outdoor || def.site === 'both')) return { ok: false, error: `${def.label} can't go outside.` }
+    if (li !== 0) return { ok: false, error: 'Outdoor pieces go on the ground floor.' }
+    return { ok: true, room: null, outdoors: true }
+  }
+  const misfit = !!(def.rooms && !def.rooms.includes(room.type))
+  return { ok: true, room, misfit }
+}
+
+export function canPlaceItem(project, li, item, ignoreId = null) {
+  const base = placeBasics(project, li, item)
+  if (!base.ok) return base
+  const def = ITEMS[item.type]
+  const level = project.levels[li]
+  const cells = itemCells(item)
   if (!def.overlay || def.ceiling) {
     const taken = new Set()
     for (const it of level.items) {
@@ -363,9 +375,22 @@ export function canPlaceItem(project, li, item, ignoreId = null) {
       if (def.ceiling ? !ITEMS[it.type].ceiling : ITEMS[it.type].overlay) continue
       for (const c of itemCells(it)) taken.add(ck(c.x, c.y))
     }
-    if (cells.some(c => taken.has(ck(c.x, c.y)))) return { ok: false, error: 'Something is already there.' }
+    if (cells.some(c => taken.has(ck(c.x, c.y)))) return { ok: false, error: 'Something is already there.', overlap: true }
   }
-  return { ok: true, room }
+  return base
+}
+
+// An item that overlaps another (e.g. after rotating) stays where it is, drawn red, until moved.
+export function itemConflict(project, li, it) { return !canPlaceItem(project, li, it, it.id).ok }
+
+export function rotateItem(project, li, id) {
+  const p = clone(project)
+  const it = p.levels[li].items.find(i => i.id === id)
+  if (!it) return { project }
+  it.rot = ((it.rot || 0) + 1) % 2
+  const bad = !placeBasics(p, li, it).ok
+  if (bad) return { project, error: 'No room to rotate there: it would leave the room.' }
+  return { project: p, conflict: itemConflict(p, li, it) }
 }
 
 export function placeItem(project, li, item) {
@@ -407,12 +432,7 @@ export function cleanup(p) {
     const edges = wallEdges(level)
     level.doors = level.doors.filter(k => edges.has(k) && !(li > 0 && edges.get(k).exterior))
     level.windows = level.windows.filter(k => edges.has(k) && edges.get(k).exterior)
-    const keep = []
-    for (const it of level.items) {
-      const tmp = { ...p, levels: p.levels.map((l, i) => i === li ? { ...l, items: keep } : l) }
-      if (canPlaceItem(tmp, li, it).ok) keep.push(it)
-    }
-    level.items = keep
+    level.items = level.items.filter(it => placeBasics(p, li, it).ok)
   })
   return p
 }
@@ -480,12 +500,24 @@ export function projectCost(project, kit = []) {
     for (const e of wallEdges(level).values()) if (e.exterior) facade += facadeRate
   })
   finishes += paint
+  const roof = roofArea(project) * (ROOFS[project.roof]?.cost || ROOFS.gravel.cost)
+  finishes += roof
   let total = shell + finishes + items + openings + facade
   if (kit.includes('contractor')) total *= 0.88
   const bgId = kit.find(k => k.startsWith('bg:'))
   if (bgId === 'bg:business') total *= 0.9
   if (bgId === 'bg:architect') total *= 0.975
   return { total: Math.round(total), shell: Math.round(shell), finishes: Math.round(finishes), items, openings, facade: Math.round(facade) }
+}
+
+// Exposed roof: every room cell with no room cell on the level above.
+export function roofArea(project) {
+  let n = 0
+  project.levels.forEach((level, li) => {
+    const above = project.levels[li + 1] ? cellOwners(project.levels[li + 1]) : null
+    for (const r of level.rooms) for (const c of roomCells(r)) if (!above?.has(c)) n++
+  })
+  return n
 }
 
 export function footprint(project, li = 0) {

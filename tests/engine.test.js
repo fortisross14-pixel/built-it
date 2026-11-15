@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { addRoom, canPlaceItem, cutRoom, duplicateLevel, extendRoom, mergeCandidates, mergeRooms, moveRoom, roomArea, roomPerimeter, newProject, placeItem, removeRoom, toggleOpening, wallEdges, verticalLinks, addLevel } from '../src/engine/plan.js'
+import { addRoom, canPlaceItem, itemConflict, rotateItem, setOpening as setOpeningFn, cutRoom, duplicateLevel, extendRoom, mergeCandidates, mergeRooms, moveRoom, roomArea, roomPerimeter, newProject, placeItem, removeRoom, toggleOpening, wallEdges, verticalLinks, addLevel } from '../src/engine/plan.js'
 import { evaluate, merchandise } from '../src/engine/score.js'
 import { START_CASH, abandonCareer, acceptOffer, acknowledge, archiveCareer, buyPack, completeCommission, makeOffer, newCareer, newMeta, retryCommission, rng, unlocksFor } from '../src/engine/career.js'
 import { PACKS, available, makeCtx } from '../src/game/packs.js'
@@ -40,14 +40,52 @@ test('kitchen wet rooms default to a water-safe floor', () => {
   assert.equal(p.room.floor, 'ceramic')
 })
 
-test('items must sit in allowed rooms; site items outside', () => {
+test('placement is free but judged: wrong rooms allowed, outdoor rules, overlaps refused', () => {
   let p = addRoom(newProject(cafeOffer()), 0, { x: 0, y: 0, w: 4, h: 4 }, 'seating').project
   assert.ok(canPlaceItem(p, 0, { type: 'table', x: 0, y: 0, rot: 0 }).ok)
-  assert.ok(!canPlaceItem(p, 0, { type: 'oven', x: 0, y: 0, rot: 0 }).ok)
-  assert.ok(!canPlaceItem(p, 0, { type: 'tree', x: 1, y: 1, rot: 0 }).ok)
+  const oven = canPlaceItem(p, 0, { type: 'oven', x: 0, y: 0, rot: 0 })
+  assert.ok(oven.ok && oven.misfit, 'an oven in the dining room is allowed but flagged')
+  assert.ok(!canPlaceItem(p, 0, { type: 'tree', x: 1, y: 1, rot: 0 }).ok, 'trees stay outside')
   assert.ok(canPlaceItem(p, 0, { type: 'tree', x: 6, y: 6, rot: 0 }).ok)
+  assert.ok(canPlaceItem(p, 0, { type: 'table', x: 8, y: 8, rot: 0 }).ok, 'terrace tables can go outside')
+  assert.ok(!canPlaceItem(p, 0, { type: 'toilet', x: 8, y: 8, rot: 0 }).ok, 'toilets cannot')
   p = placeItem(p, 0, { type: 'table', x: 0, y: 0 }).project
   assert.ok(!canPlaceItem(p, 0, { type: 'table', x: 1, y: 1, rot: 0 }).ok)
+})
+
+test('rotating into something is allowed, marked as a conflict and excluded from scoring', () => {
+  const offer = cafeOffer()
+  let p = addRoom(newProject(offer), 0, { x: 0, y: 0, w: 6, h: 6 }, 'seating').project
+  p = placeItem(p, 0, { type: 'sofa', x: 0, y: 0 }).project
+  p = placeItem(p, 0, { type: 'table', x: 0, y: 1 }).project
+  const sofa = p.levels[0].items.find(i => i.type === 'sofa')
+  const r = rotateItem(p, 0, sofa.id)
+  assert.ok(!r.error && r.conflict, 'rotation goes through and is flagged')
+  const res = evaluate(r.project, offer)
+  assert.ok(res.checklist.some(c => c.kind === 'conflict'))
+  assert.ok(res.functionality < evaluate(p, offer).functionality)
+  assert.ok(r.project.levels[0].items.length === 2, 'cleanup keeps the conflicting item for the player to fix')
+})
+
+test('key layout checks: disconnected kitchen fails the route; gendered restrooms feature', () => {
+  const offer = { ...makeOffer('fastFood', rng(1), 0), twist: null }
+  let p = newProject(offer)
+  p = addRoom(p, 0, { x: 1, y: 1, w: 8, h: 5 }, 'seating').project
+  p = addRoom(p, 0, { x: 9, y: 1, w: 4, h: 5 }, 'kitchen').project
+  p = setOpeningFn(p, 0, 'h:4:6', 'door').project
+  p = placeItem(p, 0, { type: 'counter', x: 6, y: 1 }).project
+  const before = evaluate(p, offer).checklist.find(c => c.label === 'Counter next to the kitchen')
+  assert.match(before.detail, /Not connected/)
+  p = setOpeningFn(p, 0, 'v:9:2', 'door').project
+  const after = evaluate(p, offer).checklist.find(c => c.label === 'Counter next to the kitchen')
+  assert.ok(after.ok, after.detail)
+  const bistro = { ...makeOffer('bistro', rng(1), 0), twist: null }
+  let q = newProject(bistro)
+  q = addRoom(q, 0, { x: 0, y: 0, w: 3, h: 3 }, 'wc').project
+  q = addRoom(q, 0, { x: 3, y: 0, w: 3, h: 3 }, 'wc').project
+  assert.ok(!evaluate(q, bistro).checklist.find(c => c.label.startsWith("Women's and men's restrooms")).ok)
+  q.levels[0].rooms[0].gender = 'women'; q.levels[0].rooms[1].gender = 'men'
+  assert.ok(evaluate(q, bistro).checklist.find(c => c.label.startsWith("Women's and men's restrooms")).ok)
 })
 
 test('removing a room removes its items and openings', () => {
@@ -228,9 +266,9 @@ test('rooms: any orthogonal shape via extend and cut; walls follow the outline',
   assert.equal(roomArea(r.project.levels[0].rooms[0]), 30 - 4)
   assert.match(cutRoom(p, 0, id, { x: 0, y: 2, w: 6, h: 1 }).error, /split/)
   // furniture outside the new outline is dropped by cleanup
-  let q = placeItem(p, 0, { type: 'table', x: 0, y: 5 }).project
+  let q = placeItem(p, 0, { type: 'oven', x: 0, y: 5 }).project
   q = cutRoom(q, 0, id, { x: 0, y: 4, w: 2, h: 3 }).project
-  assert.ok(!q.levels[0].items.some(i => i.type === 'table'))
+  assert.ok(!q.levels[0].items.some(i => i.type === 'oven'), 'indoor-only items outside the new outline are dropped')
   // scoring still runs on irregular rooms
   assert.ok(evaluate(p, cafeOffer()).overall >= 0)
 })
@@ -304,7 +342,36 @@ test('architect backgrounds: art +aesthetics, business cheaper, engineering forg
   assert.ok(biz.cost.total < base.cost.total * 0.91)
   assert.ok(eng.requirements > base.requirements)
   assert.ok(pure.requirements > base.requirements && pure.cost.total < base.cost.total && pure.requirements < eng.requirements)
-  assert.equal(Object.keys(BACKGROUNDS).length, 4)
+  assert.equal(Object.keys(BACKGROUNDS).length, 5)
   const c = newCareer(newMeta(), { name: 'P', profile: { background: 'art', country: 'ES', age: 31 }, seed: 1 })
   assert.ok(c.profile.country === 'ES')
+})
+
+test('profiles: founders unlock specialists; expertise and signature finishes', async () => {
+  const { PROFILES, profileUnlocked, profileById } = await import('../src/game/architects.js')
+  const { makeCtx, available } = await import('../src/game/packs.js')
+  const { PAINTS, ROOFS } = await import('../src/game/catalog.js')
+  const { perks, archiveCareer, isExpert } = await import('../src/engine/career.js')
+  assert.equal(PROFILES.length, 10)
+  const meta = newMeta()
+  assert.equal(PROFILES.filter(p => profileUnlocked(meta, p)).length, 2)
+  // founder kit vs signature
+  const founder = newCareer(meta, { name: 'F', profile: { profileId: 'base-w', background: 'base' }, seed: 3 })
+  const ctxF = makeCtx(meta, founder)
+  assert.ok(available(PAINTS.paper, 'paper', ctxF))
+  assert.ok(!available(PAINTS.venetian, 'venetian', ctxF))
+  const spec = newCareer(meta, { name: 'S', profile: { profileId: 'art-fashion', background: 'art' }, seed: 4 })
+  assert.ok(available(ROOFS.copper, 'copper', makeCtx(meta, spec)))
+  assert.ok(!available(PAINTS.paper, 'paper', makeCtx(meta, spec)))
+  assert.ok(perks(spec).includes('exp:fashion') && isExpert(spec, 'fashion') && !isExpert(founder, 'fashion'))
+  // expertise adds functionality
+  const offer = cafeOffer(); const p = referenceCafe(offer)
+  const plain = evaluate(p, offer, ['bg:art']), expert = evaluate(p, offer, ['bg:art', 'exp:food'])
+  assert.ok(expert.functionality >= Math.min(100, plain.functionality + 4))
+  // a completed founder career unlocks four specialists, a short one doesn't
+  const done = { ...founder, status: 'retired', portfolio: Array.from({ length: 5 }, () => ({ offer: { level: 1 }, scores: { overall: 70 }, briefId: 'boutique' })) }
+  const m2 = archiveCareer(meta, done)
+  assert.equal(m2.profilesUnlocked.length, 4)
+  assert.ok(m2.profilesUnlocked.every(id => profileById(id).unlockBy === 'base-w'))
+  assert.equal(archiveCareer(meta, { ...done, portfolio: done.portfolio.slice(0, 2) }).profilesUnlocked.length, 0)
 })

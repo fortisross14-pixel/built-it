@@ -320,3 +320,130 @@ export function estimateBudget(brief) {
   const openings = Math.ceil(perimeter * levels / 3) * BASE_COST.window + brief.rooms.length * 2 * BASE_COST.door
   return Math.round((shell + facade + finishes + lighting + items + vertical + openings) * 1.22 / 1000) * 1000
 }
+
+// ---------------------------------------------------------------- key layout checks
+// Measured as real walking distance (metres, through doors and stairs) from `from` to `to`.
+// from/to: 'entrance' | 'room:<type>' (any room of that type) | 'rooms:<type>' (each room) |
+//          'items:<a>,<b>' (each matching item). mode: avg over targets or the nearest one.
+// Close ≤ close m scores fully, ≤ mid m scores 60%, beyond that 25%; not connected scores 0.
+const CHECKS = {
+  food: [
+    { id: 'tables', label: 'Tables to the kitchen', from: 'room:kitchen', to: 'items:table,bigTable,booth,chefTable', mode: 'avg', close: 6, mid: 12, why: 'Waiters walk this route for every plate.' },
+    { id: 'counter', label: 'Counter next to the kitchen', from: 'room:kitchen', to: 'items:counter', mode: 'min', close: 2, mid: 6, why: 'Food passes from the kitchen to the counter all day.' },
+    { id: 'door', label: 'Entrance to the counter', from: 'entrance', to: 'items:counter', mode: 'min', close: 6, mid: 12, w: 0.6, why: 'Customers should find the counter straight away.' },
+  ],
+  fashion: [
+    { id: 'fitting', label: 'Fitting rooms by the racks', from: 'room:fitting', to: 'items:rack', mode: 'avg', close: 6, mid: 12, why: 'Shoppers carry clothes to the fitting rooms.' },
+    { id: 'tills', label: 'Tills near the entrance', from: 'entrance', to: 'items:checkout', mode: 'min', close: 5, mid: 10, why: 'Every customer passes the till on the way out.' },
+    { id: 'stock', label: 'Stockroom to the shop floor', from: 'room:storage', to: 'items:rack', mode: 'avg', close: 8, mid: 16, w: 0.6, why: 'Staff restock the racks from the back.' },
+  ],
+  grocery: [
+    { id: 'tills', label: 'Tills by the entrance', from: 'entrance', to: 'items:checkout', mode: 'min', close: 5, mid: 10, why: 'Shoppers finish at the tills and leave.' },
+    { id: 'stock', label: 'Stockroom to the shelves', from: 'room:storage', to: 'items:aisle,chiller', mode: 'avg', close: 8, mid: 16, why: 'Shelves are refilled from the stockroom every day.' },
+    { id: 'cold', label: 'Cold room to the chillers', from: 'room:coldroom', to: 'items:chiller', mode: 'avg', close: 6, mid: 12, why: 'Chilled stock must not travel far.' },
+  ],
+  health: [
+    { id: 'reception', label: 'Reception at the door', from: 'entrance', to: 'items:reception', mode: 'min', close: 4, mid: 8, why: 'Patients check in first.' },
+    { id: 'exam', label: 'Treatment rooms from waiting', from: 'room:waiting', to: 'rooms:exam', mode: 'avg', close: 5, mid: 10, why: 'Patients are called in from the waiting room.' },
+    { id: 'store', label: 'Supplies to the treatment rooms', from: 'room:storage', to: 'rooms:exam', mode: 'avg', close: 6, mid: 12, w: 0.6, why: 'Staff fetch instruments between patients.' },
+  ],
+  civic: [
+    { id: 'reception', label: 'Reception at the door', from: 'entrance', to: 'items:reception', mode: 'min', close: 5, mid: 10, why: 'Visitors are welcomed and oriented here.' },
+    { id: 'reading', label: 'Reading room by the stacks', from: 'room:stacks', to: 'room:reading', mode: 'min', close: 2, mid: 6, why: 'Readers take books to the tables.' },
+    { id: 'galleries', label: 'Galleries from the atrium', from: 'room:atrium', to: 'rooms:gallery', mode: 'avg', close: 8, mid: 16, why: 'Every visit starts in the atrium.' },
+    { id: 'classes', label: 'Classrooms to the toilets', from: 'room:wc', to: 'rooms:classroom', mode: 'avg', close: 10, mid: 20, why: 'Small children need toilets nearby.' },
+  ],
+  housing: [
+    { id: 'lift', label: 'Lift near the entrance', from: 'entrance', to: 'items:elevator', mode: 'min', close: 5, mid: 10, why: 'Residents carry shopping to the lift.' },
+    { id: 'units', label: 'Apartments from the lift', from: 'items:elevator', to: 'rooms:unit', mode: 'avg', close: 10, mid: 20, why: 'Long corridors feel like a hotel, not a home.' },
+  ],
+  office: [
+    { id: 'lift', label: 'Lift near the entrance', from: 'entrance', to: 'items:elevator', mode: 'min', close: 6, mid: 12, why: 'Everyone arrives through the lobby.' },
+    { id: 'wc', label: 'Toilets from the desks', from: 'room:wc', to: 'items:desk', mode: 'avg', close: 12, mid: 24, why: 'Staff walk there several times a day.' },
+  ],
+  retail: [
+    { id: 'shops', label: 'Shops from the atrium', from: 'room:atrium', to: 'rooms:shop', mode: 'avg', close: 8, mid: 16, why: 'The atrium should show off every shop.' },
+    { id: 'food', label: 'Food court by the atrium', from: 'room:atrium', to: 'room:foodcourt', mode: 'min', close: 2, mid: 8, why: 'Food keeps shoppers in the centre.' },
+  ],
+  sports: [
+    { id: 'reception', label: 'Reception at the door', from: 'entrance', to: 'items:reception', mode: 'min', close: 5, mid: 10, why: 'Members check in at the door.' },
+    { id: 'changing', label: 'Changing rooms to the court', from: 'room:changing', to: 'room:court', mode: 'min', close: 3, mid: 10, why: 'Teams walk out in their kit.' },
+    { id: 'gym', label: 'Changing rooms to the gym', from: 'room:changing', to: 'room:gym', mode: 'min', close: 3, mid: 10, why: 'Members change before training.' },
+  ],
+  transport: [
+    { id: 'security', label: 'Check-in to security', from: 'room:checkin', to: 'room:security', mode: 'min', close: 4, mid: 12, why: 'Passengers flow straight from check-in to security.' },
+    { id: 'gates', label: 'Security to the gates', from: 'room:security', to: 'rooms:gate', mode: 'avg', close: 15, mid: 35, why: 'Long walks make people miss flights.' },
+    { id: 'bags', label: 'Check-in to the baggage hall', from: 'room:checkin', to: 'room:baggage', mode: 'min', close: 3, mid: 10, why: 'Bags travel on belts behind the desks.' },
+  ],
+}
+// Per-brief weights (what matters most for that building).
+const CHECK_WEIGHTS = {
+  fastFood: { counter: 2, tables: 0.4, door: 1 },
+  cafe: { counter: 1.2, tables: 0.8 },
+  bistro: { tables: 1.6 }, fineDining: { tables: 1.8, counter: 0.5 },
+  bakery: { counter: 1.5 },
+}
+
+// ---------------------------------------------------------------- signature features
+// kind has: one of these items · gender: a women's and a men's room of this type ·
+// premium: share of these items at Premium quality · finish: average finish quality.
+// bonus: optional (adds points, never costs points).
+const FEATURES = {
+  food: [
+    { id: 'booths', kind: 'has', label: 'Booth seating', types: ['booth'], bonus: true, why: 'Diners love a booth.' },
+    { id: 'seating', kind: 'premium', label: 'Premium seating', types: ['table', 'bigTable', 'booth'], share: 0.5, why: 'Comfortable chairs keep people for dessert.' },
+    { id: 'finish', kind: 'finish', label: 'Premium finishes', min: 0.85, why: 'Diners judge the room before the food.' },
+  ],
+  fashion: [
+    { id: 'fitting', kind: 'gender', room: 'fitting', label: "Women's and men's fitting rooms", why: 'Separate fitting rooms are expected.' },
+    { id: 'finish', kind: 'finish', label: 'Premium finishes', min: 0.85, why: 'The shop is part of the brand.' },
+  ],
+  grocery: [
+    { id: 'prepared', kind: 'has', label: 'Prepared food counter', types: ['gourmetDeli', 'bakeryCorner', 'juiceBar'], bonus: true, why: 'Ready meals and fresh bread bring people back daily.' },
+    { id: 'finish', kind: 'finish', label: 'Durable, good finishes', min: 0.75, why: 'Floors take a beating from trolleys.' },
+  ],
+  health: [{ id: 'finish', kind: 'finish', label: 'Hygienic quality finishes', min: 0.8, why: 'Clinics must look and be clean.' }],
+  civic: [{ id: 'finish', kind: 'finish', label: 'Civic-quality finishes', min: 0.8, why: 'Public buildings should last decades.' }],
+  housing: [{ id: 'finish', kind: 'finish', label: 'Quality finishes in homes', min: 0.8, why: 'Residents notice every surface.' }],
+  office: [{ id: 'finish', kind: 'finish', label: 'Premium workplace finishes', min: 0.85, why: 'Tenants pay for quality.' }],
+  retail: [{ id: 'finish', kind: 'finish', label: 'Premium finishes', min: 0.85, why: 'The centre competes on atmosphere.' }],
+  sports: [
+    { id: 'changing', kind: 'gender', room: 'changing', label: "Women's and men's changing rooms", why: 'Teams need separate changing rooms.' },
+    { id: 'finish', kind: 'finish', label: 'Hard-wearing finishes', min: 0.75, why: 'Sport is tough on buildings.' },
+  ],
+  transport: [{ id: 'finish', kind: 'finish', label: 'Premium terminal finishes', min: 0.85, why: 'Terminals are a city\'s front door.' }],
+}
+const WC_GENDER = { id: 'wc', kind: 'gender', room: 'wc', label: "Women's and men's restrooms", why: 'Separate restrooms are expected in public buildings.' }
+// How much each feature matters per brief (0 removes it). Finishes count less in fast food.
+const FEATURE_WEIGHTS = {
+  fastFood: { finish: 0.3, seating: 0.3 }, cafe: { finish: 0.6, seating: 0.6 }, bakery: { finish: 0.5, seating: 0 },
+  bistro: { finish: 1, seating: 1 }, fineDining: { finish: 1.6, seating: 1.6 },
+  boutique: { finish: 0.6 }, fastFashion: { finish: 0.3 }, fashionChain: { finish: 0.8 }, luxury: { finish: 1.8, fitting: 1.4 },
+  cornerShop: { finish: 0.4 }, supermarket: { finish: 0.6 }, foodHall: { finish: 1.2 },
+}
+
+const hasRoom = (b, t) => b.rooms.some(r => r.type === t)
+const programHas = (b, spec) => {
+  if (spec === 'entrance') return true
+  const [k, v] = spec.split(':')
+  if (k === 'room' || k === 'rooms') return hasRoom(b, v)
+  const types = v.split(',')
+  return b.items.some(it => types.includes(it.type)) || (types.includes('table') && b.items.some(it => it.family === 'tableFam'))
+}
+
+export function checksFor(briefId) {
+  const b = BRIEFS[briefId]
+  const w = CHECK_WEIGHTS[briefId] || {}
+  return (CHECKS[b.industry] || []).filter(c => programHas(b, c.from) && programHas(b, c.to))
+    .map(c => ({ ...c, w: w[c.id] ?? c.w ?? 1 })).filter(c => c.w > 0)
+}
+
+export function featuresFor(briefId) {
+  const b = BRIEFS[briefId]
+  const w = FEATURE_WEIGHTS[briefId] || {}
+  const list = [...(FEATURES[b.industry] || [])]
+  const wcs = b.rooms.find(r => r.type === 'wc')
+  if (wcs && (wcs.count || 1) >= 2) list.push(WC_GENDER)
+  return list.filter(f => f.kind !== 'gender' || (b.rooms.find(r => r.type === f.room)?.count || 1) >= 2)
+    .map(f => ({ ...f, w: w[f.id] ?? f.w ?? 1 })).filter(f => f.w > 0)
+}

@@ -5,11 +5,11 @@ import Icon from './icons.jsx'
 import View3D from './View3D.jsx'
 import { ItemSymbol } from './PlanView.jsx'
 import { BRIEFS, GRADES, TWISTS } from '../game/briefs.js'
-import { INDUSTRIES, ITEMS, MATERIALS, ROOMS, STYLES } from '../game/catalog.js'
+import { CEILINGS, INDUSTRIES, ITEMS, MATERIALS, PAINTS, ROOFS, ROOMS, STYLES } from '../game/catalog.js'
 import { PACKS, packContents } from '../game/packs.js'
-import { MAX_LEVEL, RANKS, feeFor, randomArchitect, rankFor } from '../engine/career.js'
+import { COMPLETE_AT, MAX_LEVEL, RANKS, feeFor, profilesEarned, randomArchitect, rankFor } from '../engine/career.js'
 import { referenceCafe } from '../game/demo.js'
-import { AVATARS, BACKGROUNDS, COUNTRIES, GENDERS, countryName, flag } from '../game/architects.js'
+import { BACKGROUNDS, COUNTRIES, GENDERS, PROFILES, countryName, flag, profileById, profileUnlocked } from '../game/architects.js'
 import Avatar from './Avatar.jsx'
 import ProjectArt from './ProjectArt.jsx'
 import { Diamond, Num, PerspectiveLines, Title, WaveMesh, Window } from './deco.jsx'
@@ -114,13 +114,30 @@ export function Home({ meta, career, onContinue, onNew, onUnlocks, onLegacy }) {
 }
 
 // ------------------------------------------------------------------ New career
+function sigLabels(prof) {
+  if (prof.base) return [PAINTS.paper.label, ITEMS.paperLantern.label]
+  const g = prof.sig
+  return [PAINTS[g.wall]?.label, MATERIALS[g.floor]?.label, CEILINGS[g.ceiling]?.label, ROOFS[g.roof]?.label].filter(Boolean)
+}
+function sigColors(prof) {
+  if (prof.base) return [PAINTS.paper.color, '#f3e9d2']
+  const g = prof.sig
+  return [PAINTS[g.wall]?.color, MATERIALS[g.floor]?.color, CEILINGS[g.ceiling]?.color, ROOFS[g.roof]?.color].filter(Boolean)
+}
+
 export function NewCareer({ meta, onStart, onBack, warnReplace }) {
-  const [name, setName] = useState(() => randomArchitect())
-  const [age, setAge] = useState(27)
-  const [gender, setGender] = useState('Prefer not to say')
-  const [country, setCountry] = useState('')
-  const [background, setBackground] = useState('architect')
-  const [avatar, setAvatar] = useState(() => AVATARS[Math.floor(Math.random() * AVATARS.length)])
+  const [pid, setPid] = useState(PROFILES[0].id)
+  const prof = profileById(pid)
+  const [name, setName] = useState(prof.name)
+  const [age, setAge] = useState(prof.age)
+  const [gender, setGender] = useState(prof.gender)
+  const [country, setCountry] = useState(prof.country)
+  const choose = (p) => {
+    if (!profileUnlocked(meta, p)) { feedback('error'); return }
+    feedback('select'); setPid(p.id); setName(p.name); setAge(p.age); setGender(p.gender); setCountry(p.country)
+  }
+  const bg = BACKGROUNDS[prof.background]
+  const founderName = (id) => profileById(id)?.name.split(' ')[0]
   return (
     <div className="page">
       <header className="page-top"><button className="icon-btn" onClick={onBack} aria-label="Back"><Icon name="back" /></button><Brand small /><span /></header>
@@ -129,19 +146,32 @@ export function NewCareer({ meta, onStart, onBack, warnReplace }) {
         <span className="eyebrow">Architect no. {String(meta.careers + 1).padStart(2, '0')}</span>
         <Title as="h2" light="Who's opening" bold="the studio?" />
         {warnReplace && <p className="warn">Your current architect's career will end and go to the legacy hall.</p>}
-        <div className="field">
-          <span className="eyebrow">Portrait</span>
-          <div className="avatar-pick">
-            {AVATARS.map(id => (
-              <button key={id} className={`ap ${avatar === id ? 'on' : ''}`} onClick={() => { feedback('tap'); setAvatar(id) }} aria-label={`Portrait ${id}`}>
-                <img src={`${import.meta.env.BASE_URL}art/architects/${id}.jpg`} alt="" loading="lazy" />
+        <div className="prof-grid" role="listbox" aria-label="Architect profiles">
+          {PROFILES.map((p, i) => {
+            const open = profileUnlocked(meta, p)
+            return (
+              <button key={p.id} role="option" aria-selected={pid === p.id} className={`prof-card ${pid === p.id ? 'on' : ''} ${open ? '' : 'locked'}`} onClick={() => choose(p)}>
+                <span className="pc-img"><img src={`${import.meta.env.BASE_URL}art/architects/${p.avatar}.jpg`} alt="" loading="lazy" />{!open && <span className="pc-lock"><Icon name="lock" size={18} /></span>}</span>
+                <span className="pc-num mono">{String(i + 1).padStart(2, '0')}</span>
+                <b>{p.title}</b>
+                <span className="pc-meta">{p.base ? 'No bonus · founders kit' : `${BACKGROUNDS[p.background].label.replace('Architect + ', '').replace(/^./, c => c.toUpperCase())} · ${p.expertise.map(x => INDUSTRIES[x].label).join(', ')}`}</span>
+                {!open && <span className="pc-unlock">Complete a career with {founderName(p.unlockBy)}</span>}
               </button>
-            ))}
-          </div>
+            )
+          })}
         </div>
         <div className="profile-card">
-          <Avatar name={name} profile={{ avatar, country }} size={96} className="big" />
+          <Avatar name={name} profile={{ avatar: prof.avatar, country }} size={96} className="big" />
           <div className="profile-fields">
+            <div className="prof-perks">
+              <span className="mono dim">{prof.title.toUpperCase()}</span>
+              <p><b>{bg.label}.</b> {bg.text}</p>
+              {prof.expertise.length > 0 && <p><b>Expertise: {prof.expertise.map(x => INDUSTRIES[x].label).join(', ')}.</b> +5 Functionality and +10% fees on those projects.</p>}
+              <div className="sig-row">
+                <span className="mono dim">{prof.base ? 'FOUNDERS KIT' : 'SIGNATURE FINISHES'}</span>
+                <div className="sig-chips">{sigLabels(prof).map((l, i) => <span key={l} className="tag-chip"><i style={{ background: sigColors(prof)[i] }} />{l}</span>)}</div>
+              </div>
+            </div>
             <label className="field">
               <span className="mono dim">NAME</span>
               <div className="row">
@@ -172,22 +202,13 @@ export function NewCareer({ meta, onStart, onBack, warnReplace }) {
             </div>
           </div>
         </div>
-        <div className="field">
-          <span className="mono dim">BACKGROUND</span>
-          <div className="bg-grid">
-            {Object.entries(BACKGROUNDS).map(([id, b], i) => (
-              <button key={id} className={`bg-card ${background === id ? 'on' : ''}`} onClick={() => { feedback('select'); setBackground(id) }}>
-                <Num n={i + 1} /><b>{b.label}</b><span>{b.text}</span>
-              </button>
-            ))}
-          </div>
-        </div>
         <div className="info-grid">
           <div><Icon name="flag" /><b>Start at level 1</b><span>Your first client is one of three basics: a boutique, a fast-food counter or a corner grocery.</span></div>
           <div><Icon name="lock" /><b>{meta.unlocked.length} permanent unlocks</b><span>Everything earlier architects unlocked with B, A and S grades is yours from day one.</span></div>
+          <div><Icon name="star" /><b>{PROFILES.filter(p => profileUnlocked(meta, p)).length}/10 architects</b><span>Finish a career (5+ approved commissions) with a founder to open four specialists.</span></div>
         </div>
         <div className="sticky-cta">
-          <button className="primary big" disabled={!name.trim()} onClick={() => onStart({ name: name.trim(), profile: { age, gender, country, background, avatar } })}><Icon name="building" size={18} />Open studio</button>
+          <button className="primary big" disabled={!name.trim()} onClick={() => onStart({ name: name.trim(), profile: { age, gender, country, background: prof.background, avatar: prof.avatar, profileId: prof.id } })}><Icon name="building" size={18} />Open studio</button>
         </div>
       </div>
     </div>
@@ -240,7 +261,7 @@ export function Hub({ career, meta, onAccept, onResume, onHome, onRetire, onOpen
           <p className="studio-meta">
             {prof.country && <span>{flag(prof.country)} {countryName(prof.country)}</span>}
             {prof.age && <span>{prof.age}</span>}
-            {prof.background && <span>{BACKGROUNDS[prof.background]?.label}</span>}
+            {profileById(prof.profileId) ? <span>{profileById(prof.profileId).title}</span> : prof.background && <span>{BACKGROUNDS[prof.background]?.label}</span>}
             <span className="rank">{rank.title}</span>
           </p>
         </section>
@@ -465,6 +486,7 @@ export function Review({ entry, career, onContinue, onRetry, onAbandon }) {
   const grade = GRADES.find(g => g.id === entry.grade)
   const [count, setCount] = useState(fxSettings.reduceMotion ? s.overall : 0)
   const [revealed, setRevealed] = useState(fxSettings.reduceMotion)
+  const [openBar, setOpenBar] = useState(null)
   useEffect(() => {
     if (fxSettings.reduceMotion) return
     let raf, t0 = null, last = 0
@@ -504,11 +526,34 @@ export function Review({ entry, career, onContinue, onRetry, onAbandon }) {
           </div>
         </div>
         <div className="score-bars">
-          {[['Functionality', s.functionality], ['Requirements', s.requirements], ['Aesthetics', s.aesthetics], ['Budget', s.budget ?? 0]].map(([k, v], i) => (
-            <div key={k} className="sbar" style={{ '--d': `${i * 0.15}s` }}>
-              <span>{k}</span><div className="bar"><i style={{ width: `${v}%` }} className={v < 55 ? 'bad' : v < 70 ? 'mid' : ''} /></div><b className="mono">{v}</b>
-            </div>
-          ))}
+          {[['Functionality', s.functionality], ['Requirements', s.requirements], ['Aesthetics', s.aesthetics], ['Budget', s.budget ?? 0]].map(([k, v], i) => {
+            const rows = review.breakdown?.[k.toLowerCase()] || []
+            const isOpen = openBar === k
+            return (
+              <div key={k} className={`sbar-wrap ${isOpen ? 'open' : ''}`}>
+                <button className="sbar" style={{ '--d': `${i * 0.15}s` }} disabled={!rows.length} aria-expanded={isOpen}
+                  onClick={() => { feedback('tap'); setOpenBar(isOpen ? null : k) }}>
+                  <span>{k}</span><div className="bar"><i style={{ width: `${v}%` }} className={v < 55 ? 'bad' : v < 70 ? 'mid' : ''} /></div><b className="mono">{v}</b>
+                  {rows.length > 0 && <Icon name="chevron" size={14} />}
+                </button>
+                {isOpen && (
+                  <ul className="sb-detail">
+                    {rows.map((r, j) => (
+                      <li key={j} className={r.value >= 0.9 ? 'good' : r.value >= 0.6 ? 'mid' : 'bad'}>
+                        <span className="sb-dot" />
+                        <div>
+                          <b>{r.label}</b>{!r.check && <em className="mono"> {Math.round(r.value * 100)}%</em>}
+                          {r.text && <p>{r.check ? <span className="mono">{r.text}</span> : r.text}</p>}
+                          {r.detail?.length > 0 && <ul>{r.detail.map((d, n) => <li key={n}>{d}</li>)}</ul>}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )
+          })}
+          {review.breakdown && <p className="dim small sb-hint">Tap a rating to see why.</p>}
           <div className="grade-scale mono">{GRADES.slice().reverse().map(g => <span key={g.id} className={g.id === entry.grade ? 'on' : ''}>{g.id} {g.min ? `≥${g.min}` : ''}</span>)}</div>
         </div>
         <div className="crit">
@@ -567,7 +612,9 @@ export function Review({ entry, career, onContinue, onRetry, onAbandon }) {
 }
 
 // ------------------------------------------------------------------ Career end
-export function CareerEnd({ career, title, onArchive }) {
+export function CareerEnd({ career, meta, title, onArchive }) {
+  const earned = meta ? profilesEarned(meta, career) : []
+  const founder = profileById(career.profile?.profileId)
   const n = career.portfolio.length
   const avg = n ? Math.round(career.portfolio.reduce((s, p) => s + p.scores.overall, 0) / n) : 0
   const head = { fired: 'THE STUDIO HAS CLOSED', abandoned: 'YOU WALKED AWAY', retired: 'RETIREMENT' }[career.status] || 'CAREER OVER'
@@ -584,6 +631,16 @@ export function CareerEnd({ career, title, onArchive }) {
           <div><span className="mono dim">TOP LEVEL</span><b>{Math.max(0, ...career.portfolio.map(p => p.offer.level))}</b></div>
           <div><span className="mono dim">FINAL RANK</span><b className="small">{rankFor(career.rep).title}</b></div>
         </div>
+        {earned.length > 0 && (
+          <section className="prof-unlock">
+            <span className="mono dim">CAREER COMPLETE · NEW ARCHITECTS</span>
+            <p>{founder?.name.split(' ')[0]}'s studio trained four specialists. They're ready for their own careers.</p>
+            <div className="pu-row">{earned.map(id => { const p = profileById(id); return <div key={id} className="pu"><img src={`${import.meta.env.BASE_URL}art/architects/${p.avatar}.jpg`} alt="" /><b>{p.title}</b></div> })}</div>
+          </section>
+        )}
+        {founder?.base && !earned.length && career.portfolio.length < COMPLETE_AT && !(meta?.profilesUnlocked || []).some(id => profileById(id)?.unlockBy === founder.id) && (
+          <p className="dim small">Finish a founder career with {COMPLETE_AT}+ approved commissions to unlock four specialist architects.</p>
+        )}
         <h3>Portfolio</h3>
         <Portfolio works={career.portfolio.map(p => ({ briefId: p.briefId, client: p.client, overall: p.scores.overall, grade: p.grade, thumb: p.thumb }))} />
         <div className="sticky-cta"><button className="primary big" onClick={onArchive}><Icon name="trophy" size={18} />Add to the legacy hall</button></div>

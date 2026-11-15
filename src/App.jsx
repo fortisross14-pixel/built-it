@@ -110,7 +110,7 @@ export default function App() {
       onRetry={() => afterReview(retryCommission(career))}
       onAbandon={() => afterReview(career.status === 'fired' ? acknowledge(career) : abandonCareer(career))} />
   }
-  if (screen === 'end' && career) return <CareerEnd career={career} title={legacyTitle(career)} onArchive={archive} />
+  if (screen === 'end' && career) return <CareerEnd career={career} meta={meta} title={legacyTitle(career)} onArchive={archive} />
   if (screen === 'new') return <NewCareer meta={meta} warnReplace={!!career} onStart={startCareer} onBack={() => setScreen('home')} />
   if (screen === 'unlocks') return <Unlocks meta={meta} onBack={() => setScreen(career ? 'hub' : 'home')} />
   if (screen === 'legacy') return <Legacy meta={meta} onBack={() => setScreen('home')} />

@@ -3,7 +3,7 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
-import { CEILINGS, DOORS, ITEMS, LEVEL_HEIGHT, MATERIALS, PAINTS, itemSize, productDef } from '../game/catalog.js'
+import { CEILINGS, DOORS, ITEMS, LEVEL_HEIGHT, MATERIALS, PAINTS, ROOFS, itemSize, productDef } from '../game/catalog.js'
 import { cellOwners, ck, roomCells, roomRuns, wallEdges } from '../engine/plan.js'
 
 const WALL_T = 0.2
@@ -37,10 +37,28 @@ class Bucket {
 function seeded(seed) { let s = seed; return () => (s = (s * 16807) % 2147483647) / 2147483647 }
 
 function tree(b, x, z, y0, scale = 1, tint = '#7f9f6a') {
-  b.box(mat('#7a5a3e'), x, y0 + 0.6 * scale, z, 0.18 * scale, 1.2 * scale, 0.18 * scale)
-  const g = new THREE.IcosahedronGeometry(0.85 * scale, 0)
-  g.translate(x, y0 + 1.75 * scale, z)
-  b.add(mat(tint), g)
+  b.box(mat('#7a5a3e'), x, y0 + 0.7 * scale, z, 0.16 * scale, 1.4 * scale, 0.16 * scale)
+  const lo = new THREE.IcosahedronGeometry(0.85 * scale, 0)
+  lo.rotateY(x * 1.7 + z); lo.translate(x, y0 + 1.75 * scale, z)
+  b.add(mat(tint), lo)
+  const hi = new THREE.IcosahedronGeometry(0.55 * scale, 0)
+  hi.rotateY(x + z * 1.3); hi.translate(x + 0.12 * scale, y0 + 2.45 * scale, z - 0.08 * scale)
+  b.add(mat(new THREE.Color(tint).offsetHSL(0.01, 0.02, 0.06).getStyle()), hi)
+}
+
+// Little white figures, like the people in a presentation model.
+function person(b, x, z, y0 = 0, r = Math.random) {
+  const m = mat(['#f2f0ea', '#e6e2d8', '#d9d5cb'][Math.floor(r() * 3)])
+  const h = 1.55 + r() * 0.25
+  b.box(m, x, y0 + h * 0.27, z, 0.22, h * 0.54, 0.16)
+  b.box(m, x, y0 + h * 0.7, z, 0.34, h * 0.34, 0.2)
+  const head = new THREE.IcosahedronGeometry(0.11, 0); head.translate(x, y0 + h * 0.95, z); b.add(m, head)
+}
+
+function streetLamp(b, x, z) {
+  b.box(mat('#3b4248'), x, 2.1, z, 0.1, 4.2, 0.1)
+  b.box(mat('#3b4248'), x, 4.2, z - 0.35, 0.12, 0.08, 0.8)
+  b.box(mat('#fff6df', { emissive: '#ffd894', emissiveIntensity: 0.6 }), x, 4.13, z - 0.65, 0.22, 0.05, 0.3)
 }
 
 // Low-poly furniture. (x, z) = footprint origin, (w, d) = footprint size in metres.
@@ -78,18 +96,28 @@ function furniture(b, type, x, z, w, d, y0, quality = 1, product = null) {
       break
     }
     case 'table': case 'bigTable': {
-      b.box(wood, cx, y0 + 0.74, cz, w - 0.7, 0.06, d - 0.7)
-      b.box(dark, cx, y0 + 0.37, cz, 0.12, 0.72, 0.12)
+      b.box(wood, cx, y0 + 0.74, cz, w - 0.7, 0.05, d - 0.7)
+      b.box(dark, cx, y0 + 0.37, cz, 0.08, 0.72, 0.08)
+      b.box(dark, cx, y0 + 0.02, cz, 0.45, 0.04, 0.45)
       const chairs = type === 'table' ? [[0.25, 0.5], [0.75, 0.5]] : [[0.2, 0.5], [0.4, 0.5], [0.6, 0.5], [0.8, 0.5]]
-      for (const [u] of chairs) for (const side of [0.18, d - 0.18]) b.box(fabric, x + u * w, y0 + 0.23, z + side, 0.38, 0.46, 0.32)
+      for (const [u] of chairs) for (const side of [0.18, d - 0.18]) {
+        b.box(fabric, x + u * w, y0 + 0.45, z + side, 0.38, 0.06, 0.34)
+        b.box(dark, x + u * w, y0 + 0.21, z + side, 0.3, 0.42, 0.04)
+        b.box(fabric, x + u * w, y0 + 0.7, z + (side < d / 2 ? side - 0.15 : side + 0.15), 0.38, 0.45, 0.05)
+      }
       break
     }
     case 'counter': case 'reception':
-      b.box(type === 'counter' ? wood : white, cx, y0 + 0.55, cz, w - 0.08, 1.1, d - 0.25)
-      b.box(dark, cx, y0 + 1.12, cz, w, 0.05, d - 0.15); break
+      b.box(dark, cx, y0 + 0.06, cz, w - 0.2, 0.12, d - 0.4)
+      b.box(type === 'counter' ? wood : white, cx, y0 + 0.6, cz, w - 0.08, 0.98, d - 0.25)
+      b.box(dark, cx, y0 + 1.12, cz, w, 0.05, d - 0.15)
+      if (type === 'counter') { b.box(dark, x + 0.5, y0 + 1.3, cz, 0.3, 0.3, 0.06); b.box(mat('#e8e3da'), x + w - 0.6, y0 + 1.2, cz, 0.35, 0.12, 0.25) }
+      break
     case 'oven': case 'stove': case 'fridge': case 'kitchenette':
       b.box(steel, cx, y0 + (type === 'fridge' ? 1 : 0.45), cz, w - 0.08, type === 'fridge' ? 2 : 0.9, d - 0.15)
-      if (type === 'stove') b.box(dark, cx, y0 + 0.92, cz, w - 0.3, 0.04, d - 0.4)
+      if (type === 'stove') for (const u of [0.3, 0.7]) for (const v of [0.35, 0.65]) b.box(dark, x + u * w, y0 + 0.92, z + v * d, 0.22, 0.03, 0.22)
+      if (type === 'oven') b.box(mat('#2a2e31'), cx, y0 + 0.45, cz + d / 2 - 0.07, w * 0.6, 0.35, 0.02)
+      if (type === 'fridge') b.box(dark, x + w - 0.2, y0 + 1.2, cz + d / 2 - 0.06, 0.04, 0.5, 0.04)
       break
     case 'espresso':
       b.box(wood, cx, y0 + 0.5, cz, w - 0.1, 1, d - 0.1); b.box(mat('#c0392b'), cx, y0 + 1.15, cz, 0.5, 0.3, 0.4); break
@@ -100,9 +128,15 @@ function furniture(b, type, x, z, w, d, y0, quality = 1, product = null) {
     case 'shower':
       b.box(mat('#cfe3ea', { transparent: true, opacity: 0.5 }), cx, y0 + 1, cz, w - 0.1, 2, d - 0.1); break
     case 'sofa':
-      b.box(fabric, cx, y0 + 0.22, cz, w - 0.1, 0.44, d - 0.2); b.box(fabric, cx, y0 + 0.55, z + 0.15, w - 0.1, 0.5, 0.2); break
+      b.box(fabric, cx, y0 + 0.22, cz, w - 0.1, 0.44, d - 0.2); b.box(fabric, cx, y0 + 0.55, z + 0.15, w - 0.1, 0.5, 0.2)
+      b.box(fabric, x + 0.12, y0 + 0.42, cz, 0.18, 0.3, d - 0.25); b.box(fabric, x + w - 0.12, y0 + 0.42, cz, 0.18, 0.3, d - 0.25)
+      for (const u of [0.3, 0.7]) b.box(mat(new THREE.Color(look.fabric).offsetHSL(0, 0, 0.08).getStyle()), x + u * w, y0 + 0.47, cz + 0.05, w * 0.36, 0.06, d - 0.55)
+      break
     case 'bed':
-      b.box(white, cx, y0 + 0.28, cz, w - 0.2, 0.5, d - 0.15); b.box(fabric, cx, y0 + 0.55, z + d * 0.62, w - 0.2, 0.08, d * 0.7); break
+      b.box(wood, cx, y0 + 0.55, z + 0.06, w - 0.1, 1.1, 0.1)
+      b.box(white, cx, y0 + 0.28, cz, w - 0.2, 0.5, d - 0.15); b.box(fabric, cx, y0 + 0.55, z + d * 0.62, w - 0.2, 0.08, d * 0.7)
+      for (const u of [0.3, 0.7]) b.box(white, x + u * w, y0 + 0.6, z + 0.35, w * 0.32, 0.12, 0.35)
+      break
     case 'desk': case 'deskRow':
       b.box(white, cx, y0 + 0.74, cz, w - 0.15, 0.05, d - 0.35)
       for (let i = 0; i < Math.round(w); i++) b.box(fabric, x + i + 0.5, y0 + 0.25, z + d - 0.15, 0.4, 0.5, 0.3)
@@ -133,8 +167,9 @@ function furniture(b, type, x, z, w, d, y0, quality = 1, product = null) {
     case 'stage':
       b.box(wood, cx, y0 + 0.3, cz, w, 0.6, d); break
     case 'plant': {
-      b.box(mat('#c4a17c'), cx, y0 + 0.2, cz, 0.4, 0.4, 0.4)
-      const g = new THREE.IcosahedronGeometry(0.38, 0); g.translate(cx, y0 + 0.75, cz); b.add(mat('#6f9c62'), g); break
+      b.box(mat('#c4a17c'), cx, y0 + 0.2, cz, 0.4, 0.4, 0.4); b.box(mat('#d4b58f'), cx, y0 + 0.41, cz, 0.46, 0.04, 0.46)
+      const g = new THREE.IcosahedronGeometry(0.38, 0); g.translate(cx, y0 + 0.75, cz); b.add(mat('#6f9c62'), g)
+      const g2 = new THREE.IcosahedronGeometry(0.24, 0); g2.translate(cx + 0.1, y0 + 1.08, cz - 0.05); b.add(mat('#7fae70'), g2); break
     }
     case 'stairs': case 'featureStair': {
       const steps = 12, run = Math.max(w, d), alongX = w > d
@@ -151,7 +186,13 @@ function furniture(b, type, x, z, w, d, y0, quality = 1, product = null) {
       b.box(mat('#8d969c'), cx, y0 + WALL_H / 2, cz, w - 0.2, WALL_H, d - 0.2); break
     case 'tree': tree(b, cx, cz, y0, 1); break
     case 'oakTree': tree(b, cx, cz, y0, 1.9, '#62864f'); break
-    case 'bench': b.box(wood, cx, y0 + 0.4, cz, w - 0.2, 0.08, 0.5); b.box(dark, cx, y0 + 0.2, cz, w - 0.6, 0.4, 0.1); break
+    case 'bench': b.box(wood, cx, y0 + 0.42, cz, w - 0.2, 0.06, 0.45); b.box(wood, cx, y0 + 0.7, cz - 0.22, w - 0.2, 0.25, 0.05); for (const u of [0.2, 0.8]) b.box(dark, x + u * w, y0 + 0.2, cz, 0.06, 0.4, 0.42); break
+    case 'grill': {
+      b.box(dark, cx, y0 + 0.45, cz, w - 0.3, 0.9, d - 0.3)
+      b.box(mat('#2a2e31'), cx, y0 + 0.93, cz, w - 0.4, 0.06, d - 0.4)
+      b.box(mat('#f08a3c', { emissive: '#f06a1c', emissiveIntensity: 0.5 }), cx, y0 + 0.97, cz, w - 0.7, 0.02, d - 0.7)
+      b.box(steel, cx, y0 + 1.4, z + 0.2, w - 0.3, 0.9, 0.05); break
+    }
     case 'planter': {
       b.box(mat('#a29a8c'), cx, y0 + 0.3, cz, w - 0.1, 0.6, d - 0.1)
       for (const u of [0.3, 0.7]) { const g = new THREE.IcosahedronGeometry(0.35, 0); g.translate(x + u * w, y0 + 0.8, cz); b.add(mat('#7fa36b'), g) }
@@ -220,7 +261,12 @@ function furniture(b, type, x, z, w, d, y0, quality = 1, product = null) {
     // --- food
     case 'fryer': b.box(steel, cx, y0 + 0.45, cz, w - 0.1, 0.9, d - 0.2); b.box(mat('#e0b040'), cx, y0 + 0.91, cz, w - 0.5, 0.03, d - 0.5); break
     case 'drinkStation': b.box(mat('#e2513b'), cx, y0 + 0.75, cz, w - 0.1, 1.5, d - 0.3); b.box(dark, cx, y0 + 0.9, cz + d / 2 - 0.15, w - 0.4, 0.3, 0.05); break
-    case 'booth': b.box(mat('#9c3b2f'), cx, y0 + 0.3, z + 0.3, w - 0.1, 0.6, 0.5); b.box(mat('#9c3b2f'), cx, y0 + 0.3, z + d - 0.3, w - 0.1, 0.6, 0.5); b.box(wood, cx, y0 + 0.74, cz, w - 0.6, 0.06, d - 1.3); break
+    case 'booth': {
+      const bm = mat(quality === 2 ? '#6e2a33' : quality === 0 ? '#b8a99a' : '#9c3b2f')
+      b.box(bm, cx, y0 + 0.22, z + 0.3, w - 0.1, 0.44, 0.5); b.box(bm, cx, y0 + 0.22, z + d - 0.3, w - 0.1, 0.44, 0.5)
+      b.box(bm, cx, y0 + 0.75, z + 0.1, w - 0.1, 0.7, 0.14); b.box(bm, cx, y0 + 0.75, z + d - 0.1, w - 0.1, 0.7, 0.14)
+      b.box(wood, cx, y0 + 0.74, cz, w - 0.6, 0.05, d - 1.3); b.box(dark, cx, y0 + 0.37, cz, 0.1, 0.72, 0.1); break
+    }
     case 'pizzaOven': { const g = new THREE.SphereGeometry(Math.min(w, d) * 0.45, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2); g.translate(cx, y0 + 0.9, cz); b.add(mat('#b55a3c'), g); b.box(mat('#8a8279'), cx, y0 + 0.45, cz, w - 0.1, 0.9, d - 0.1); break }
     case 'wineWall': for (let r = 0; r < 6; r++) b.box(mat(r % 2 ? '#5a1f2a' : look.wood), cx, y0 + 0.2 + r * 0.38, cz, w - 0.1, 0.3, d - 0.5); break
     case 'chefTable': b.box(mat('#2f3539'), cx, y0 + 0.9, cz, w - 0.2, 0.08, d - 0.6); for (let i = 0; i < 4; i++) b.box(fabric, x + 0.5 + i * (w - 1) / 3, y0 + 0.4, z + d - 0.2, 0.35, 0.8, 0.35); break
@@ -265,6 +311,13 @@ export function buildModel(project, { cutLevel = null, context = true, showCeili
   }
   const glass = mat('#9cc7da', { transparent: true, opacity: 0.55, roughness: 0.15 })
   const frame = mat('#3b4248')
+  const roofId = ROOFS[project.roof] ? project.roof : 'gravel'
+  const roofMat = mat(roofId === 'solar' ? '#c9cdd0' : roofId === 'sawtooth' ? '#b7b9b4' : ROOFS[roofId].color)
+  const fc = new THREE.Color(facadeMat.color)
+  const coping = mat('#' + fc.clone().lerp(new THREE.Color('#ffffff'), 0.35).getHexString())
+  const plinth = mat('#' + fc.clone().multiplyScalar(0.62).getHexString())
+  const sill = mat('#' + fc.clone().lerp(new THREE.Color('#e9e6df'), 0.5).getHexString())
+  const out = (e, d) => ({ x: e.nx * d, z: e.ny * d }) // offset to the street side of an exterior wall
   const top = cutLevel === null ? project.levels.length - 1 : cutLevel
   const owners = project.levels.map(cellOwners)
 
@@ -288,6 +341,9 @@ export function buildModel(project, { cutLevel = null, context = true, showCeili
       }
     }
     for (let x = -20; x < lot.w + 20; x += 5 + Math.floor(r() * 3)) tree(b, x, lot.h + 11.2, 0, 0.9 + r() * 0.4)
+    for (let x = -12; x < lot.w + 12; x += 9) streetLamp(b, x + 2, lot.h + 2.2)
+    const crowd = Math.min(9, 3 + Math.floor(lot.w / 6))
+    for (let i = 0; i < crowd; i++) person(b, r() * (lot.w + 8) - 4, lot.h + 0.6 + r() * 1.3 + (r() < 0.3 ? 9.6 : 0), 0, r)
   }
 
   const isRoom = (li, x, y) => li >= 0 && li < project.levels.length && owners[li].has(ck(x, y))
@@ -330,6 +386,12 @@ export function buildModel(project, { cutLevel = null, context = true, showCeili
             b.box(dm, cx, base + 1.1, cz, e.horiz ? 0.9 : 0.05, 2.2, e.horiz ? 0.05 : 0.9)
             if (st !== 'standard') b.box(frame, cx, base + 1.1, cz, e.horiz ? 0.04 : 0.08, 2.2, e.horiz ? 0.08 : 0.04)
           }
+          if (li === 0) {
+            // entrance canopy and step
+            const o = out(e, WALL_T / 2 + 0.45), s0 = out(e, WALL_T / 2 + 0.3)
+            b.box(frame, cx + o.x, base + 2.45, cz + o.z, e.horiz ? 1.6 : 0.9, 0.08, e.horiz ? 0.9 : 1.6)
+            b.box(sill, cx + s0.x, 0.05, cz + s0.z, e.horiz ? 1.3 : 0.6, 0.1, e.horiz ? 0.6 : 1.3)
+          }
         }
       } else if (e.exterior && glazed) {
         seg(0, Math.min(0.15, wallH)); seg(Math.min(wallH, 2.85), wallH)
@@ -341,12 +403,27 @@ export function buildModel(project, { cutLevel = null, context = true, showCeili
           const gh = Math.min(wallH, 2.3) - 0.9
           b.box(glass, cx, base + 0.9 + gh / 2, cz, e.horiz ? 0.92 : 0.05, gh, e.horiz ? 0.05 : 0.92)
           b.box(frame, cx, base + 0.9 + gh / 2, cz, e.horiz ? 0.05 : 0.08, gh, e.horiz ? 0.08 : 0.05)
+          b.box(frame, cx, base + 0.9 + gh * 0.62, cz, e.horiz ? 0.92 : 0.07, 0.04, e.horiz ? 0.07 : 0.92)
+          if (e.exterior) {
+            const o = out(e, WALL_T / 2 + 0.05)
+            b.box(sill, cx + o.x, base + 0.86, cz + o.z, e.horiz ? 1.08 : 0.12, 0.06, e.horiz ? 0.12 : 1.08)
+            b.box(frame, cx + o.x * 0.4, base + 0.9 + gh + 0.03, cz + o.z * 0.4, e.horiz ? 0.98 : 0.06, 0.05, e.horiz ? 0.06 : 0.98)
+          }
         }
       } else seg(0, wallH)
-      // parapet / roof edge on top of exterior walls with nothing above
+      // plinth band at street level
+      if (e.exterior && li === 0 && !doors.has(e.key)) { const o = out(e, WALL_T / 2 + 0.015); b.box(plinth, cx + o.x, 0.2, cz + o.z, e.horiz ? 1.0 : 0.03, 0.4, e.horiz ? 0.03 : 1.0) }
+      // floor line between storeys
+      if (e.exterior && li > 0 && !glazed) { const o = out(e, WALL_T / 2 + 0.02); b.box(coping, cx + o.x, y0 + 0.12, cz + o.z, e.horiz ? 1.0 : 0.04, 0.12, e.horiz ? 0.04 : 1.0) }
+      // parapet with coping on top of exterior walls with nothing above
       if (e.exterior && !cutTop) {
         const c = { x: e.x1 - (e.nx > 0 ? 1 : 0), y: e.y1 - (e.ny > 0 ? 1 : 0) }
-        if (!isRoom(li + 1, c.x, c.y)) b.box(facade, cx, y0 + LEVEL_HEIGHT + 0.25, cz, e.horiz ? 1.02 : WALL_T + 0.02, 0.5, e.horiz ? WALL_T + 0.02 : 1.02)
+        if (!isRoom(li + 1, c.x, c.y)) {
+          const branded = roofId === 'membraneLogo'
+          b.box(branded ? mat('#e2b04a') : facade, cx, y0 + LEVEL_HEIGHT + 0.25, cz, e.horiz ? 1.02 : WALL_T + 0.02, 0.5, e.horiz ? WALL_T + 0.02 : 1.02)
+          b.box(coping, cx, y0 + LEVEL_HEIGHT + 0.52, cz, e.horiz ? 1.04 : WALL_T + 0.1, 0.05, e.horiz ? WALL_T + 0.1 : 1.04)
+          if (roofId === 'roofTerrace') b.box(glass, cx, y0 + LEVEL_HEIGHT + 0.85, cz, e.horiz ? 1.0 : 0.04, 0.6, e.horiz ? 0.04 : 1.0)
+        }
       }
     }
     // roofs over cells with nothing above
@@ -355,11 +432,15 @@ export function buildModel(project, { cutLevel = null, context = true, showCeili
       for (const it of level.items) if (it.type === 'skylight') {
         const s = itemSize(it); for (let yy = it.y; yy < it.y + s.h; yy++) for (let xx = it.x; xx < it.x + s.w; xx++) sky.add(ck(xx, yy))
       }
+      const ry = y0 + LEVEL_HEIGHT + 0.2
+      const roofCells = []
       for (const r of level.rooms) for (const k of roomCells(r)) {
         const [x, y] = k.split(':').map(Number)
         if (isRoom(li + 1, x, y)) continue
-        b.box(sky.has(ck(x, y)) ? glass : mat('#b7b9b4'), x + 0.5, y0 + LEVEL_HEIGHT + 0.1, y + 0.5, 1.001, 0.2, 1.001)
+        roofCells.push([x, y])
+        b.box(sky.has(ck(x, y)) ? glass : roofMat, x + 0.5, y0 + LEVEL_HEIGHT + 0.1, y + 0.5, 1.001, 0.2, 1.001)
       }
+      roofDetail(b, roofId, roofCells.filter(([x, y]) => !sky.has(ck(x, y))), ry, (x, y) => isRoom(li, x, y) && !isRoom(li + 1, x, y), li * 97 + lot.w)
     }
     // ceilings (only while editing them): a translucent soffit in the finish colour
     if (showCeilings && li === top) {
@@ -384,6 +465,57 @@ export function buildModel(project, { cutLevel = null, context = true, showCeili
   }
   b.flush(group)
   return group
+}
+
+// Roof finishes: low-poly dressing on exposed roof cells (inset from the parapet).
+function roofDetail(b, id, cells, ry, isRoof, seed) {
+  if (!cells.length) return
+  const r = seeded(seed + cells.length * 13 + 7)
+  const inner = cells.filter(([x, y]) => isRoof(x - 1, y) && isRoof(x + 1, y) && isRoof(x, y - 1) && isRoof(x, y + 1))
+  const pickSpot = () => inner.length ? inner[Math.floor(r() * inner.length)] : null
+  switch (id) {
+    case 'gravel': case 'membrane': case 'membraneLogo': {
+      // plant: an HVAC unit or two, plus a hatch
+      const n = Math.min(2, Math.floor(inner.length / 10))
+      for (let i = 0; i < n; i++) {
+        const c = pickSpot(); if (!c) break
+        b.box(mat('#c9ccce'), c[0] + 0.5, ry + 0.45, c[1] + 0.5, 0.9, 0.9, 0.8)
+        b.box(mat('#8d969c'), c[0] + 0.5, ry + 0.92, c[1] + 0.5, 0.6, 0.04, 0.6)
+        const fan = new THREE.CylinderGeometry(0.22, 0.22, 0.05, 8); fan.translate(c[0] + 0.5, ry + 0.95, c[1] + 0.5); b.add(mat('#4b4f52'), fan)
+      }
+      const h = pickSpot(); if (h) b.box(mat('#8d969c'), h[0] + 0.5, ry + 0.1, h[1] + 0.5, 0.7, 0.2, 0.7)
+      break
+    }
+    case 'greenRoof':
+      for (const [x, y] of cells) if (r() < 0.45) { const g = new THREE.IcosahedronGeometry(0.18 + r() * 0.16, 0); g.translate(x + 0.2 + r() * 0.6, ry + 0.08, y + 0.2 + r() * 0.6); b.add(mat(r() < 0.5 ? '#6d8f58' : '#8fae72'), g) }
+      break
+    case 'solar':
+      for (const [x, y] of inner) if (y % 2 === 0) {
+        const g = new THREE.BoxGeometry(0.96, 0.04, 0.9); g.rotateX(-0.4); g.translate(x + 0.5, ry + 0.3, y + 0.5); b.add(mat('#2f3d55', { roughness: 0.35, metalness: 0.2 }), g)
+        b.box(mat('#9aa3a8'), x + 0.5, ry + 0.12, y + 0.72, 0.06, 0.24, 0.06)
+      }
+      break
+    case 'sawtooth':
+      for (const [x, y] of inner) if (y % 3 === 0) {
+        const g = new THREE.CylinderGeometry(0.55, 0.55, 1.001, 3, 1); g.rotateZ(Math.PI / 2); g.translate(x + 0.5, ry + 0.25, y + 0.5); b.add(mat(x % 2 ? '#c9cdd0' : '#9cc7da', x % 2 ? {} : { roughness: 0.2 }), g)
+      }
+      break
+    case 'pitchedTiles': case 'terracottaRoof': case 'copper':
+      for (const [x, y] of cells) b.box(mat(id === 'copper' ? '#5d8a7b' : '#9e563e'), x + 0.5, ry + 0.03, y + 0.5, id === 'copper' ? 0.05 : 1.0, 0.05, id === 'copper' ? 1.0 : 0.08)
+      break
+    case 'roofTerrace': {
+      for (const [x, y] of cells) b.box(mat((x + y) % 2 ? '#b08f6b' : '#a58462'), x + 0.5, ry + 0.03, y + 0.5, 0.96, 0.05, 0.96)
+      const n = Math.min(3, Math.floor(inner.length / 8))
+      for (let i = 0; i < n; i++) {
+        const c = pickSpot(); if (!c) break
+        b.box(mat('#3b4248'), c[0] + 0.5, ry + 1.1, c[1] + 0.5, 0.05, 2.2, 0.05)
+        const u = new THREE.ConeGeometry(1.1, 0.4, 8); u.translate(c[0] + 0.5, ry + 2.3, c[1] + 0.5); b.add(mat('#f1efe8'), u)
+        b.box(mat('#b58a60'), c[0] + 0.5, ry + 0.72, c[1] + 0.5, 0.7, 0.05, 0.7)
+      }
+      for (const c of cells.filter(([x, y]) => !isRoof(x, y - 1) && x % 3 === 0)) { const g = new THREE.IcosahedronGeometry(0.3, 0); g.translate(c[0] + 0.5, ry + 0.45, c[1] + 0.4); b.add(mat('#6f9c62'), g); b.box(mat('#a29a8c'), c[0] + 0.5, ry + 0.2, c[1] + 0.4, 0.6, 0.35, 0.4) }
+      break
+    }
+  }
 }
 
 // White massing-model look (presentation model): every material becomes a near-white matte,

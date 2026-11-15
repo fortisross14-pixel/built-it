@@ -71,37 +71,37 @@ const F = 'Furniture', E = 'Equipment', V = 'Vertical', D = 'Decor', S = 'Site',
 // boost: bonus points to Functionality (f) / Aesthetics (a) the first time one is used.
 export const ITEMS = {
   // --- generic furniture & equipment (base)
-  counter:     { label: 'Counter',         w: 3, h: 1, cost: 2500, rooms: ['service', 'sales', 'seating', 'foodcourt', 'shop', 'market', 'lounge'], group: F },
+  counter:     { label: 'Counter',         w: 3, h: 1, cost: 2500, rooms: ['service', 'sales', 'seating', 'foodcourt', 'shop', 'market', 'lounge'], group: F, outdoor: true },
   reception:   { label: 'Reception desk',  w: 3, h: 1, cost: 2200, rooms: ['lobby', 'waiting', 'atrium', 'reading', 'gym', 'checkin'], group: F },
-  table:       { label: 'Table for 4',     w: 2, h: 2, cost: 900,  rooms: ['seating', 'foodcourt', 'meeting', 'reading', 'unit', 'classroom', 'lounge'], group: F, seats: 4 },
-  bigTable:    { label: 'Long table',      w: 4, h: 2, cost: 2200, rooms: ['meeting', 'reading', 'seating', 'foodcourt'], group: F, seats: 8 },
+  table:       { label: 'Table for 4',     w: 2, h: 2, cost: 900,  rooms: ['seating', 'foodcourt', 'meeting', 'reading', 'unit', 'classroom', 'lounge'], group: F, seats: 4, outdoor: true },
+  bigTable:    { label: 'Long table',      w: 4, h: 2, cost: 2200, rooms: ['meeting', 'reading', 'seating', 'foodcourt'], group: F, seats: 8, outdoor: true },
   sofa:        { label: 'Sofa',            w: 2, h: 1, cost: 1200, rooms: ['seating', 'waiting', 'lobby', 'unit', 'atrium', 'reading', 'lounge', 'gate', 'sales'], group: F },
   bed:         { label: 'Bed',             w: 2, h: 2, cost: 1100, rooms: ['unit'], group: F },
   desk:        { label: 'Desk',            w: 2, h: 1, cost: 700,  rooms: ['office', 'openOffice', 'classroom', 'reading', 'exam'], group: F },
   deskRow:     { label: 'Student desks',   w: 3, h: 1, cost: 1200, rooms: ['classroom'], group: F },
-  shelving:    { label: 'Shelving',        w: 2, h: 1, cost: 700,  rooms: ['storage', 'stacks', 'sales', 'kitchen', 'classroom', 'office', 'coldroom'], group: F },
-  display:     { label: 'Display case',    w: 2, h: 1, cost: 1600, rooms: ['sales', 'gallery', 'shop', 'service', 'atrium', 'market'], group: F, products: 'display' },
+  shelving:    { label: 'Shelving',        w: 2, h: 1, cost: 700,  rooms: ['storage', 'stacks', 'sales', 'kitchen', 'classroom', 'office', 'coldroom'], group: F, tall: true },
+  display:     { label: 'Display case',    w: 2, h: 1, cost: 1600, rooms: ['sales', 'gallery', 'shop', 'service', 'atrium', 'market'], group: F, products: 'display', outdoor: true },
   artwork:     { label: 'Exhibit plinth',  w: 1, h: 1, cost: 1500, rooms: ['gallery', 'atrium', 'lobby'], group: F },
   stage:       { label: 'Stage',           w: 4, h: 2, cost: 3000, rooms: ['hall'], group: F },
-  lockers:     { label: 'Lockers',         w: 2, h: 1, cost: 900,  rooms: ['corridor', 'classroom', 'hall', 'lobby', 'changing', 'gym'], group: F },
+  lockers:     { label: 'Lockers',         w: 2, h: 1, cost: 900,  rooms: ['corridor', 'classroom', 'hall', 'lobby', 'changing', 'gym'], group: F, tall: true },
   espresso:    { label: 'Espresso bar',    w: 1, h: 1, cost: 3000, rooms: ['service', 'kitchen', 'seating', 'lounge'], group: E },
   oven:        { label: 'Oven',            w: 2, h: 1, cost: 4000, rooms: ['kitchen'], group: E },
   stove:       { label: 'Range',           w: 2, h: 1, cost: 3500, rooms: ['kitchen'], group: E },
-  fridge:      { label: 'Fridge',          w: 1, h: 1, cost: 1500, rooms: ['kitchen', 'service', 'storage', 'unit', 'coldroom'], group: E },
+  fridge:      { label: 'Fridge',          w: 1, h: 1, cost: 1500, rooms: ['kitchen', 'service', 'storage', 'unit', 'coldroom'], group: E, tall: true },
   sink:        { label: 'Sink',            w: 1, h: 1, cost: 600,  rooms: ['kitchen', 'wc', 'service', 'unit', 'exam', 'changing'], group: E },
   toilet:      { label: 'Toilet',          w: 1, h: 1, cost: 900,  rooms: ['wc', 'unit', 'changing'], group: E },
   shower:      { label: 'Shower',          w: 1, h: 1, cost: 1200, rooms: ['wc', 'unit', 'changing'], group: E },
-  kitchenette: { label: 'Kitchenette',     w: 2, h: 1, cost: 2500, rooms: ['unit', 'office'], group: E },
+  kitchenette: { label: 'Kitchenette',     w: 2, h: 1, cost: 2500, rooms: ['unit', 'office'], group: E, tall: true },
   examBed:     { label: 'Exam chair',      w: 1, h: 2, cost: 2000, rooms: ['exam'], group: E },
   stairs:      { label: 'Stairs',          w: 2, h: 3, cost: 9000, rooms: null, group: V, vertical: true, walkable: true },
   elevator:    { label: 'Elevator',        w: 2, h: 2, cost: 25000, rooms: null, group: V, vertical: true, walkable: true, lift: true },
 
   // --- fashion
-  rack:        { label: 'Clothes rack',    w: 2, h: 1, cost: 800,  rooms: ['sales', 'shop'], group: F, ind: ['fashion', 'retail'], family: 'rack', products: 'apparel' },
+  rack:        { label: 'Clothes rack',    w: 2, h: 1, cost: 800,  rooms: ['sales', 'shop'], group: F, ind: ['fashion', 'retail'], family: 'rack', products: 'apparel', outdoor: true },
   mirror:      { label: 'Full mirror',     w: 1, h: 1, cost: 400,  rooms: ['fitting', 'sales', 'changing'], group: F, ind: ['fashion'] },
   miniDisplay: { label: 'Boutique display',w: 1, h: 1, cost: 1400, rooms: ['sales', 'shop'], group: F, ind: ['fashion', 'retail'], unlock: 'B', boost: { f: 3 }, products: 'display' },
   mannequin:   { label: 'Mannequin trio',  w: 1, h: 1, cost: 1200, rooms: ['sales', 'shop'], group: D, ind: ['fashion', 'retail'], unlock: 'B', layer: 'decor', boost: { a: 3, products: 'apparel' }, decor: 1 },
-  shoeWall:    { label: 'Shoe wall',       w: 3, h: 1, cost: 3200, rooms: ['sales', 'shop'], group: F, ind: ['fashion'], unlock: 'A', boost: { f: 3, a: 2 } },
+  shoeWall:    { label: 'Shoe wall',       w: 3, h: 1, cost: 3200, rooms: ['sales', 'shop'], group: F, ind: ['fashion'], unlock: 'A', boost: { f: 3, a: 2 }, tall: true },
   jewelCase:   { label: 'Jewellery case',  w: 1, h: 1, cost: 4500, rooms: ['sales', 'shop'], group: F, ind: ['fashion'], unlock: 'A', boost: { a: 4 } },
   spotTrack:   { label: 'Gallery spots',   w: 3, h: 1, cost: 1400, rooms: null, group: L, ind: ['fashion', 'retail', 'civic'], unlock: 'A', layer: 'decor', ceiling: true, overlay: true, walkable: true, light: 15, ambience: 0.8 },
   vipSalon:    { label: 'VIP salon',       w: 3, h: 3, cost: 9000, rooms: ['sales', 'fitting', 'lounge'], group: F, ind: ['fashion'], unlock: 'S', boost: { f: 2, a: 7 } },
@@ -109,15 +109,16 @@ export const ITEMS = {
 
   // --- food & drink
   fryer:       { label: 'Fryer station',   w: 2, h: 1, cost: 3200, rooms: ['kitchen'], group: E, ind: ['food'] },
-  drinkStation:{ label: 'Drinks station',  w: 2, h: 1, cost: 1800, rooms: ['seating', 'service', 'foodcourt'], group: E, ind: ['food'] },
+  grill:       { label: 'Outdoor grill',   w: 2, h: 1, cost: 2800, rooms: ['kitchen', 'service'], group: E, ind: ['food'], outdoor: true },
+  drinkStation:{ label: 'Drinks station',  w: 2, h: 1, cost: 1800, rooms: ['seating', 'service', 'foodcourt'], group: E, ind: ['food'], outdoor: true },
   booth:       { label: 'Booth seating',   w: 3, h: 2, cost: 2400, rooms: ['seating', 'foodcourt'], group: F, ind: ['food'], unlock: 'B', seats: 6, family: 'tableFam', boost: { f: 2 } },
   pizzaOven:   { label: 'Wood-fired oven', w: 2, h: 2, cost: 7000, rooms: ['kitchen', 'service', 'seating'], group: E, ind: ['food'], unlock: 'A', boost: { f: 2, a: 3 } },
-  wineWall:    { label: 'Wine wall',       w: 3, h: 1, cost: 5200, rooms: ['seating', 'service', 'lounge'], group: F, ind: ['food'], unlock: 'A', boost: { a: 4 } },
+  wineWall:    { label: 'Wine wall',       w: 3, h: 1, cost: 5200, rooms: ['seating', 'service', 'lounge'], group: F, ind: ['food'], unlock: 'A', boost: { a: 4 }, tall: true },
   chefTable:   { label: "Chef's table",    w: 4, h: 2, cost: 9500, rooms: ['kitchen', 'seating'], group: F, ind: ['food'], unlock: 'S', seats: 8, boost: { f: 3, a: 6 } },
 
   // --- grocery
-  chiller:       { label: 'Chiller',          w: 3, h: 1, cost: 3900, rooms: ['market', 'sales'], group: E, ind: ['grocery'], family: 'chiller', products: 'chilled' },
-  aisle:         { label: 'Aisle shelving',   w: 3, h: 1, cost: 1100, rooms: ['market', 'sales'], group: F, ind: ['grocery'], family: 'aisle', products: 'dry' },
+  chiller:       { label: 'Chiller',          w: 3, h: 1, cost: 3900, rooms: ['market', 'sales'], group: E, ind: ['grocery'], family: 'chiller', products: 'chilled', tall: true },
+  aisle:         { label: 'Aisle shelving',   w: 3, h: 1, cost: 1100, rooms: ['market', 'sales'], group: F, ind: ['grocery'], family: 'aisle', products: 'dry', outdoor: true, tall: true },
   checkout:      { label: 'Checkout',              w: 2, h: 1, cost: 2600, rooms: ['market', 'sales', 'shop'], group: E, ind: ['grocery', 'retail', 'fashion'] },
   bakeryCorner:  { label: 'In-store bakery',       w: 3, h: 2, cost: 8000, rooms: ['market'], group: E, ind: ['grocery'], unlock: 'A', boost: { f: 2, a: 3 } },
   gourmetDeli:   { label: 'Gourmet deli',          w: 3, h: 2, cost: 9000, rooms: ['market'], group: E, ind: ['grocery'], unlock: 'A', boost: { a: 4 } },
@@ -125,7 +126,7 @@ export const ITEMS = {
 
   // --- sport
   treadmill:   { label: 'Treadmill row',   w: 3, h: 2, cost: 9000, rooms: ['gym'], group: E, ind: ['sports'] },
-  weights:     { label: 'Weights rack',    w: 2, h: 1, cost: 3000, rooms: ['gym'], group: E, ind: ['sports'] },
+  weights:     { label: 'Weights rack',    w: 2, h: 1, cost: 3000, rooms: ['gym'], group: E, ind: ['sports'], tall: true },
   courtLines:  { label: 'Court markings',  w: 6, h: 4, cost: 6000, rooms: ['court', 'hall'], group: E, ind: ['sports'], walkable: true, overlay: true },
   bleachers:   { label: 'Bleachers',       w: 4, h: 2, cost: 5500, rooms: ['court', 'hall'], group: F, ind: ['sports'], seats: 24 },
   spinStudio:  { label: 'Spin bikes',      w: 3, h: 2, cost: 8000, rooms: ['gym'], group: E, ind: ['sports'], unlock: 'B', boost: { f: 3 } },
@@ -144,7 +145,7 @@ export const ITEMS = {
   readingNook: { label: 'Reading nook',    w: 2, h: 2, cost: 3000, rooms: ['reading', 'stacks', 'classroom'], group: F, ind: ['civic'], unlock: 'B', boost: { f: 1, a: 3 } },
 
   // --- decor & site (decorate layer)
-  plant:       { label: 'Potted plant',    w: 1, h: 1, cost: 150,  rooms: null, group: D, layer: 'decor', decor: 1 },
+  plant:       { label: 'Potted plant',    w: 1, h: 1, cost: 150,  rooms: null, group: D, layer: 'decor', decor: 1, outdoor: true },
   tree:        { label: 'Street tree',     w: 1, h: 1, cost: 600,  site: true, group: S, layer: 'decor', decor: 1.5 },
   bench:       { label: 'Bench',           w: 2, h: 1, cost: 400,  site: true, group: S, layer: 'decor', decor: 0.6 },
   planter:     { label: 'Planter',         w: 2, h: 1, cost: 300,  site: true, group: S, layer: 'decor', decor: 0.8, pack: 'urban' },
@@ -152,7 +153,7 @@ export const ITEMS = {
   pool:        { label: 'Reflecting pool', w: 3, h: 2, cost: 8000, site: true, group: S, layer: 'decor', decor: 3, pack: 'urban', boost: { a: 5 } },
   oakTree:     { label: 'Heritage oak',    w: 2, h: 2, cost: 3000, site: true, group: S, layer: 'decor', decor: 4, pack: 'botanical', boost: { a: 3 } },
   palm:        { label: 'Indoor palm',     w: 1, h: 1, cost: 700,  rooms: null, group: D, layer: 'decor', decor: 2, pack: 'botanical' },
-  greenWall:   { label: 'Green wall',      w: 3, h: 1, cost: 3500, rooms: null, group: D, layer: 'decor', decor: 3, pack: 'botanical', boost: { a: 4 } },
+  greenWall:   { label: 'Green wall',      w: 3, h: 1, cost: 3500, rooms: null, group: D, layer: 'decor', decor: 3, pack: 'botanical', boost: { a: 4 }, tall: true },
   sculpture:   { label: 'Sculpture',       w: 1, h: 1, cost: 5000, rooms: ['atrium', 'lobby', 'gallery', 'seating', 'sales'], site: 'both', group: D, layer: 'decor', decor: 2, pack: 'gallery', boost: { a: 4 } },
   neonSign:    { label: 'Neon sign',       w: 2, h: 1, cost: 2500, rooms: null, group: D, layer: 'decor', walkable: true, overlay: true, pack: 'gallery', boost: { a: 3 } },
   rug:         { label: 'Designer rug',    w: 3, h: 2, cost: 1800, rooms: null, group: D, layer: 'decor', walkable: true, overlay: true, floorOverlay: true, pack: 'gallery', boost: { a: 2 } },
@@ -166,6 +167,7 @@ export const ITEMS = {
   pendant:     { label: 'Pendant',         w: 1, h: 1, cost: 450,  rooms: null, group: L, layer: 'decor', ceiling: true, overlay: true, walkable: true, light: 7, ambience: 0.7, pack: 'ambient' },
   track:       { label: 'Track light',     w: 2, h: 1, cost: 650,  rooms: null, group: L, layer: 'decor', ceiling: true, overlay: true, walkable: true, light: 13, ambience: 0.4, pack: 'ambient' },
   chandelier:  { label: 'Chandelier',      w: 2, h: 2, cost: 3800, rooms: null, group: L, layer: 'decor', ceiling: true, overlay: true, walkable: true, light: 16, ambience: 1, pack: 'statement', boost: { a: 2 } },
+  paperLantern:{ label: 'Paper lantern',   w: 1, h: 1, cost: 220,  rooms: null, group: L, layer: 'decor', ceiling: true, overlay: true, walkable: true, light: 6, ambience: 0.9, sig: 'base' },
   linear:      { label: 'Linear pendant',  w: 4, h: 1, cost: 1600, rooms: null, group: L, layer: 'decor', ceiling: true, overlay: true, walkable: true, light: 20, ambience: 0.8, pack: 'statement' },
 }
 
@@ -188,6 +190,14 @@ export const MATERIALS = {
   terrazzo:    { label: 'Terrazzo',         kind: 'floor', cost: 160, color: '#e9e2d4', tags: ['civic', 'playful'], wetSafe: true, pack: 'stone' },
   marble:      { label: 'Marble',           kind: 'floor', cost: 300, color: '#f1efea', tags: ['luxe', 'civic'], wetSafe: true, pack: 'stone' },
   greenTile:   { label: 'Glazed green tile',kind: 'floor', cost: 110, color: '#7fa28c', tags: ['playful', 'warm'], wetSafe: true, pack: 'stone' },
+  parquet:     { label: 'Oak parquet',        kind: 'floor', cost: 180, color: '#b98d5e', tags: ['civic', 'heritage', 'warm'], sig: 'pure-civic' },
+  herringbone: { label: 'Herringbone oak',    kind: 'floor', cost: 170, color: '#c49a6c', tags: ['warm', 'heritage'], sig: 'pure-housing' },
+  nero:        { label: 'Nero marble',        kind: 'floor', cost: 320, color: '#34363a', tags: ['luxe', 'minimal'], wetSafe: true, sig: 'art-fashion' },
+  encaustic:   { label: 'Encaustic tile',     kind: 'floor', cost: 150, color: '#c9b49a', tags: ['playful', 'heritage', 'warm'], wetSafe: true, sig: 'art-food' },
+  rubberFloor: { label: 'Rubber sports floor',kind: 'floor', cost: 110, color: '#5c6a73', tags: ['industrial', 'civic'], wetSafe: true, sig: 'eng-sports' },
+  linoleum:    { label: 'Medical linoleum',   kind: 'floor', cost: 90,  color: '#c7d6d2', tags: ['minimal', 'corporate', 'eco'], wetSafe: true, sig: 'eng-health' },
+  resin:       { label: 'Poured resin',       kind: 'floor', cost: 120, color: '#d9d6cf', tags: ['minimal', 'industrial'], wetSafe: true, sig: 'biz-grocery' },
+  lvt:         { label: 'Luxury vinyl plank', kind: 'floor', cost: 85,  color: '#a98a68', tags: ['warm', 'corporate'], wetSafe: true, sig: 'biz-hosp' },
   sportFloor:  { label: 'Sprung sport floor', kind: 'floor', cost: 140, color: '#c9a46b', tags: ['civic', 'playful'], ind: ['sports'], unlock: 'B' },
 }
 
@@ -202,6 +212,16 @@ export const PAINTS = {
   blush:      { label: 'Blush',       color: '#e8bfb6', tags: ['playful', 'luxe'], pack: 'moody' },
   navy:       { label: 'Deep navy',   color: '#34465e', tags: ['corporate', 'luxe'], pack: 'moody' },
   charcoal:   { label: 'Charcoal',    color: '#4a4c4d', tags: ['industrial', 'luxe'], pack: 'moody' },
+  // founders kit + signature finishes (sig = profile id that owns it)
+  paper:        { label: 'Paper wallpaper',   color: '#efe6d2', tags: ['warm', 'playful'], sig: 'base' },
+  limePlaster:  { label: 'Lime plaster',      color: '#e7e1d4', tags: ['civic', 'heritage', 'minimal'], sig: 'pure-civic' },
+  clayPlaster:  { label: 'Clay plaster',      color: '#d6b896', tags: ['warm', 'eco'], sig: 'pure-housing' },
+  venetian:     { label: 'Venetian plaster',  color: '#e9ddd2', tags: ['luxe', 'minimal'], sig: 'art-fashion' },
+  zellige:      { label: 'Zellige tiles',     color: '#5f8f7e', tags: ['playful', 'warm', 'luxe'], sig: 'art-food' },
+  acousticWood: { label: 'Acoustic timber',   color: '#b88e62', tags: ['warm', 'civic'], sig: 'eng-sports' },
+  hygienic:     { label: 'Hygienic panels',   color: '#eef3f2', tags: ['minimal', 'corporate'], sig: 'eng-health' },
+  brandWall:    { label: 'Brand graphic wall',color: '#e2b04a', tags: ['playful', 'corporate'], sig: 'biz-grocery' },
+  fabricPanel:  { label: 'Fabric panels',     color: '#9b7f86', tags: ['luxe', 'warm'], sig: 'biz-hosp' },
 }
 
 // Ceiling finishes, per room. Shown in 3D when the Ceiling tool is active.
@@ -211,6 +231,14 @@ export const CEILINGS = {
   slats:    { label: 'Timber slats',     color: '#c49a6c', cost: 120, tags: ['warm', 'eco'], pack: 'ceilings' },
   coffered: { label: 'Coffered plaster', color: '#efe6d6', cost: 160, tags: ['heritage', 'luxe', 'civic'], pack: 'ceilings' },
   exposed:  { label: 'Exposed services', color: '#5b6166', cost: 30,  tags: ['industrial'], pack: 'ceilings' },
+  galleryCoffers: { label: 'Gallery coffers',   color: '#f4f1ea', cost: 190, tags: ['civic', 'luxe'], sig: 'pure-civic', boost: { a: 1 } },
+  timberBeams:    { label: 'Timber beams',      color: '#a67c52', cost: 140, tags: ['warm', 'heritage'], sig: 'pure-housing' },
+  barrelVault:    { label: 'Barrel vault',      color: '#efe7dc', cost: 220, tags: ['luxe', 'heritage'], sig: 'art-fashion', boost: { a: 1 } },
+  rattan:         { label: 'Rattan canopy',     color: '#c9a46a', cost: 130, tags: ['warm', 'playful', 'eco'], sig: 'art-food' },
+  spaceFrame:     { label: 'Steel space frame', color: '#9aa3a8', cost: 160, tags: ['industrial', 'civic'], sig: 'eng-sports' },
+  chilledBeams:   { label: 'Chilled beams',     color: '#e5e9ea', cost: 150, tags: ['corporate', 'minimal'], sig: 'eng-health', boost: { f: 0.5 } },
+  openGrid:       { label: 'Open grid',         color: '#7b8185', cost: 60,  tags: ['industrial', 'corporate'], sig: 'biz-grocery' },
+  coveLit:        { label: 'Cove-lit plaster',  color: '#f3ece0', cost: 170, tags: ['luxe', 'warm'], sig: 'biz-hosp' },
 }
 
 // Entrance doors (all street doors use the project's entrance style).
@@ -258,6 +286,20 @@ export function productsFor(type) { return ITEMS[type]?.products ? PRODUCTS[ITEM
 export function productDef(it) { const p = productsFor(it.type); return p ? p[it.product] || Object.values(p)[0] : null }
 export function defaultProduct(type) { const p = productsFor(type); return p ? Object.keys(p)[0] : undefined }
 export function itemLabel(it) { const pd = productDef(it); return pd ? `${ITEMS[it.type].label} · ${pd.label}` : ITEMS[it.type].label }
+
+// Roof finishes. $/m² of roof; shown in 3D and counted toward style fit.
+export const ROOFS = {
+  gravel:        { label: 'Gravel flat roof',   color: '#b7b9b4', cost: 30,  tags: [], base: true },
+  membrane:      { label: 'White membrane',     color: '#e8e8e4', cost: 40,  tags: ['minimal'], base: true },
+  greenRoof:     { label: 'Green roof',         color: '#7f9c6a', cost: 120, tags: ['eco', 'civic'], sig: 'pure-civic', boost: { a: 2 } },
+  pitchedTiles:  { label: 'Clay tile parapet',  color: '#b4674c', cost: 110, tags: ['heritage', 'warm'], sig: 'pure-housing' },
+  copper:        { label: 'Patinated copper',   color: '#6f9c8c', cost: 220, tags: ['luxe', 'heritage'], sig: 'art-fashion', boost: { a: 2 } },
+  terracottaRoof:{ label: 'Terracotta tiles',   color: '#c2734f', cost: 100, tags: ['warm', 'heritage'], sig: 'art-food' },
+  sawtooth:      { label: 'Sawtooth skylights', color: '#c9cdd0', cost: 160, tags: ['industrial'], sig: 'eng-sports', boost: { a: 1 } },
+  solar:         { label: 'Solar array',        color: '#2f3d55', cost: 180, tags: ['eco', 'corporate'], sig: 'eng-health', boost: { f: 1 } },
+  membraneLogo:  { label: 'Branded parapet',    color: '#e4e4df', cost: 60,  tags: ['corporate', 'playful'], sig: 'biz-grocery' },
+  roofTerrace:   { label: 'Roof terrace',       color: '#a58462', cost: 150, tags: ['warm', 'luxe'], sig: 'biz-hosp', boost: { a: 2 } },
+}
 
 export const BASE_COST = { perM2: 1250, window: 900, door: 650, levelPremium: 0.06, paint: 12 }
 

@@ -2,12 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import Icon from './icons.jsx'
 import PlanView, { ItemSymbol } from './PlanView.jsx'
 import View3D from './View3D.jsx'
-import { CEILINGS, DOORS, FAMILIES, INDUSTRIES, ITEMS, itemLabel, productsFor, MATERIALS, PAINTS, QUALITY, ROOMS, STYLES, familyOf, isDecorLayer, itemCost, itemSize, materialsOfKind } from '../game/catalog.js'
+import { CEILINGS, DOORS, ROOFS, FAMILIES, INDUSTRIES, ITEMS, itemLabel, productsFor, MATERIALS, PAINTS, QUALITY, ROOMS, STYLES, familyOf, isDecorLayer, itemCost, itemSize, materialsOfKind } from '../game/catalog.js'
 import { BRIEFS, TWISTS } from '../game/briefs.js'
 import { available, lockReason } from '../game/packs.js'
 import {
   addLevel, addRoom, canPlaceItem, canPlaceRoom, cutRoom, duplicateLevel, extendRoom, itemAt, roomRuns, itemCells, mergeCandidates, mergeRooms, moveItem, moveRoom,
-  nearestEdge, placeItem, removeItem, removeRoom, removeTopLevel, roomAt, roomArea, setOpening, toggleOpening, updateRoom,
+  nearestEdge, placeItem, removeItem, rotateItem, itemConflict, placeBasics, removeRoom, removeTopLevel, roomAt, roomArea, setOpening, toggleOpening, updateRoom,
 } from '../engine/plan.js'
 import { evaluate } from '../engine/score.js'
 import { money } from './format.js'
@@ -219,7 +219,22 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
     if (p === project && last) say(last, 'error')
     else commit(p, null, 'opening')
   }
-  const handleDrop = (o) => { if (itemType) commit(placeItem(project, li, { type: itemType, rot: itemRot, q: quality, ...(placing?.product ? { product: placing.product } : {}), ...o })) }
+  const placeMsg = (it) => {
+    const b = placeBasics(project, li, it)
+    if (!b.ok) return null
+    if (b.misfit) return `${ITEMS[it.type].label} works here, but it belongs in ${ITEMS[it.type].rooms.map(t => ROOMS[t]?.label.toLowerCase()).filter(Boolean).slice(0, 2).join(' or ')}: functionality drops.`
+    return null
+  }
+  const handleDrop = (o) => {
+    if (!itemType) return
+    const it = { type: itemType, rot: itemRot, q: quality, ...(placing?.product ? { product: placing.product } : {}), ...o }
+    commit(placeItem(project, li, it), placeMsg(it))
+  }
+  const doRotate = (id) => {
+    const res = rotateItem(project, li, id)
+    if (commit(res, null, 'select') && res.conflict) say('It overlaps something now. Move it to a free spot (shown in red).', 'error')
+  }
+  const conflicts = useMemo(() => new Set(level.items.filter(it => itemConflict(project, li, it)).map(it => it.id)), [project, li, level])
   const handleMove = (id, o) => commit(moveItem(project, li, id, o))
 
   const selRoom = selection?.kind === 'room' ? level.rooms.find(r => r.id === selection.id) : null
@@ -277,6 +292,11 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
           <select value={selRoom.type} aria-label="Room type" onChange={(e) => commit(updateRoom(project, li, selRoom.id, { type: e.target.value, floor: ROOMS[e.target.value].wet && !MATERIALS[selRoom.floor].wetSafe ? 'ceramic' : selRoom.floor }), null, 'select')}>
             {types.map(t => <option key={t} value={t}>{ROOMS[t].label}</option>)}
           </select>
+          {GENDERED.includes(selRoom.type) && (
+            <select className="gender-sel" value={selRoom.gender || ''} aria-label="Who uses it" onChange={(e) => commit(updateRoom(project, li, selRoom.id, { gender: e.target.value || undefined }), null, 'select')}>
+              <option value="">All</option><option value="women">♀ Women</option><option value="men">♂ Men</option>
+            </select>
+          )}
           <span className="mono dim">{roomArea(selRoom)} m²{roomArea(selRoom) !== selRoom.w * selRoom.h ? ' · custom shape' : ` · ${selRoom.w}×${selRoom.h}`}</span>
           <button className="bb icon" onClick={() => setSelection(null)} aria-label="Close"><Icon name="x" size={16} /></button>
         </div>
@@ -301,7 +321,8 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
     if (placing3D) {
       if (ITEMS[placing3D].site && li !== 0) return say('Landscaping goes on the ground level.')
       const o = originAt(p, placing3D), sz = itemSize({ type: placing3D, rot: itemRot })
-      if (commit(placeItem(project, li, { type: placing3D, rot: itemRot, q: quality, ...(placing?.product ? { product: placing.product } : {}), ...o }))) setPulse({ x: o.x + sz.w / 2, y: o.y + sz.h / 2, w: sz.w, h: sz.h, li, ceiling: ITEMS[placing3D].ceiling, id: Date.now() })
+      const it3 = { type: placing3D, rot: itemRot, q: quality, ...(placing?.product ? { product: placing.product } : {}), ...o }
+      if (commit(placeItem(project, li, it3), placeMsg(it3))) setPulse({ x: o.x + sz.w / 2, y: o.y + sz.h / 2, w: sz.w, h: sz.h, li, ceiling: ITEMS[placing3D].ceiling, id: Date.now() })
       return
     }
     if (tool === 'look') {
@@ -333,6 +354,7 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
     const out = []
     if (selRoom) roomRuns(selRoom).forEach(q => out.push({ ...q, li }))
     if (selItem) { const s = itemSize(selItem); out.push({ x: selItem.x, y: selItem.y, w: s.w, h: s.h, li, ceiling: ITEMS[selItem.type].ceiling }) }
+    for (const it of level.items) if (conflicts.has(it.id)) { const s = itemSize(it); out.push({ x: it.x, y: it.y, w: s.w, h: s.h, li, ceiling: ITEMS[it.type].ceiling, bad: true }) }
     if (hover) {
       if (placing3D) {
         const o = originAt(hover, placing3D); const s = itemSize({ type: placing3D, rot: itemRot })
@@ -359,7 +381,7 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
       onQuality={(v) => commit(moveItem(project, li, selItem.id, { q: v }), null, 'select')}
       onProduct={(pid) => productOk(selItem.type, pid) ? commit(moveItem(project, li, selItem.id, { product: pid }), null, 'select') : say(lockReason(productsFor(selItem.type)[pid]))}
       productOk={(pid) => productOk(selItem.type, pid)}
-      onRotate={() => commit(moveItem(project, li, selItem.id, { rot: (selItem.rot + 1) % 2 }), null, 'select')}
+      onRotate={() => doRotate(selItem.id)}
       onDelete={() => { commit(removeItem(project, li, selItem.id), null, 'remove'); setSelection(null) }} onClose={() => setSelection(null)} />
   } else if (layer === 'decorate' && selRoom) {
     palette = <RoomFinishInspector room={selRoom} ctx={ctx} styles={offer.styles} say={say} onClose={() => setSelection(null)}
@@ -379,6 +401,8 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
           onPick={(f) => commit({ project: { ...project, facade: f } }, `Facade: ${MATERIALS[f].label}`, 'paint')} />
         <SwatchRow label="ENTRANCE" items={swatchItems(DOORS, 'door')} value={project.door || 'standard'} ctx={ctx} styles={offer.styles} say={say}
           onPick={(d) => commit({ project: { ...project, door: d } }, `Entrances: ${DOORS[d].label}`, 'paint')} />
+        <SwatchRow label="ROOF" items={swatchItems(ROOFS, 'roof')} value={project.roof || 'gravel'} ctx={ctx} styles={offer.styles} say={say}
+          onPick={(r) => commit({ project: { ...project, roof: r } }, `Roof: ${ROOFS[r].label}`, 'paint')} />
       </div>
     )
   } else {
@@ -426,7 +450,7 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
             validateItem={(it) => canPlaceItem(project, li, it)} shaping={shaping?.mode}
             onTap={handleTap} onRect={handleRect} onStroke={handleStroke} onItemDrop={handleDrop} onMoveItem={handleMove}
             moving={moving ? { ...moving, ok: !moveCheck?.error || (!moving.dx && !moving.dy) } : null} onMoveDrag={(dx, dy) => setMoving(m => m && (m.dx !== dx || m.dy !== dy) ? { ...m, dx, dy } : m)}
-            mergeIds={merging?.ids} bubble={bubble} />
+            mergeIds={merging?.ids} bubble={bubble} conflicts={conflicts} />
         ) : (
           <View3D project={project} cutLevel={wholeBuilding ? null : li} night={night} pickLevel={li}
             onTap={tap3D} onHover={setHover} highlights={highlights} pulse={pulse} focusLevel={li} showCeilings={tool === 'ceiling'} />
@@ -711,12 +735,17 @@ function ItemInspector({ item, onQuality, onRotate, onDelete, onClose, onProduct
   )
 }
 
+const GENDERED = ['wc', 'fitting', 'changing']
+
 function BriefPanel({ offer, brief, result, twist, kit, onClose }) {
   const groups = [
+    ['Key checks', result.checklist.filter(c => c.kind === 'check' || c.kind === 'conflict')],
+    ['Signature features', result.checklist.filter(c => c.kind === 'feature')],
     ['Rooms', result.checklist.filter(c => c.kind === 'room')],
     ['Equipment', result.checklist.filter(c => c.kind === 'item')],
-    ['Relationships', result.checklist.filter(c => c.kind === 'adj')],
+    ['Relationships', result.checklist.filter(c => c.kind === 'adj' || c.kind === 'merch')],
     ['Building', result.checklist.filter(c => !c.kind || c.kind === 'budget' || c.kind === 'light')],
+    ['Placement', result.notes.filter(n => n.label === 'Item placement' && n.value < 0.99).map(n => ({ label: n.text, ok: false, detail: (n.detail || []).slice(0, 2).join(' · ') }))],
   ]
   return (
     <div className="brief-panel">
@@ -750,7 +779,7 @@ function BriefPanel({ offer, brief, result, twist, kit, onClose }) {
         <div key={name} className="bp-group">
           <span className="mono dim">{name.toUpperCase()}</span>
           <ul className="checklist">
-            {items.map((c, i) => <li key={i} className={c.ok ? 'ok' : ''}><span className="tick">{c.ok ? <Icon name="check" size={13} stroke={2.5} /> : null}</span><span>{c.label}</span><em className="mono">{c.detail}</em></li>)}
+            {items.map((c, i) => <li key={i} className={c.ok ? 'ok' : c.value >= 0.5 ? 'part' : ''}><span className="tick">{c.ok ? <Icon name="check" size={13} stroke={2.5} /> : null}</span><span>{c.label}</span><em className="mono">{c.detail}</em></li>)}
           </ul>
         </div>
       ))}

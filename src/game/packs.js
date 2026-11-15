@@ -1,6 +1,7 @@
 // Supplier catalogue: packs bought with cash earned from fees. They unlock for the current
 // architect only. Permanent unlocks come from grades (see unlocks in career.js).
 import { CEILINGS, DOORS, INDUSTRIES, ITEMS, MATERIALS, PAINTS } from './catalog.js'
+import { profileById } from './architects.js'
 
 export const PACKS = {
   earth:       { name: 'Earth tones',          kind: 'Paint',     price: 2500, text: 'Sage, terracotta and ochre wall paints.' },
@@ -36,17 +37,22 @@ export function packContents(id) {
 // ctx = { unlocked: Set of permanent unlock ids, packs: Set of owned pack ids }
 export function available(def, id, ctx) {
   if (!def) return false
+  if (def.sig) return !!ctx.sig?.has(def.sig)
   if (def.pack) return ctx.packs.has(def.pack)
   if (def.unlock) return ctx.unlocked.has(id)
   return true
 }
 
 export function lockReason(def) {
+  if (def?.sig) return def.sig === 'base' ? "Part of the founders' kit: only the two founder architects have it." : `Signature finish of the ${profileById(def.sig)?.title || 'specialist'} profile.`
   if (def?.pack) return `Buy the “${PACKS[def.pack].name}” pack in the supplier catalogue.`
   if (def?.unlock) return `Score ${def.unlock} or better on a ${(def.ind || []).map(i => INDUSTRIES[i]?.label.toLowerCase() || i).join(' / ')} project to unlock it for every architect.`
   return ''
 }
 
 export function makeCtx(meta, career) {
-  return { unlocked: new Set(meta?.unlocked || []), packs: new Set(career?.packs || []) }
+  const prof = profileById(career?.profile?.profileId)
+  const sig = new Set()
+  if (prof) sig.add(prof.base ? 'base' : prof.id)
+  return { unlocked: new Set(meta?.unlocked || []), packs: new Set(career?.packs || []), sig }
 }

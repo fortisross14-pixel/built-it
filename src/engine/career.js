@@ -8,6 +8,7 @@
 import { BRIEFS, GRADES, GRADE_RANK, TWISTS, estimateBudget, gradeFor } from '../game/briefs.js'
 import { ITEMS, MATERIALS, PRODUCTS, STYLES } from '../game/catalog.js'
 import { PACKS } from '../game/packs.js'
+import { EXPERTISE, PROFILES, profileById } from '../game/architects.js'
 
 export function rng(seed) {
   let s = seed >>> 0
@@ -43,7 +44,7 @@ export const START_CASH = 3000
 export const feeFor = (level) => 2500 + level * 1800
 
 export function newMeta() {
-  return { unlocked: [], legacy: [], careers: 0, best: {}, version: 2 }
+  return { unlocked: [], legacy: [], careers: 0, best: {}, profilesUnlocked: [], version: 2 }
 }
 
 export function newCareer(meta, { name, profile = {}, seed = Date.now() }) {
@@ -160,7 +161,8 @@ export function completeCommission(meta, career, result, thumb) {
     }
     return { meta, career: next, entry: next.pending, unlocks: [], fee: 0 }
   }
-  const fee = Math.round(feeFor(offer.level) * grade.fee * (offer.twist ? TWISTS[offer.twist].fee || 1 : 1) / 100) * 100
+  const expert = isExpert(career, offer.industry)
+  const fee = Math.round(feeFor(offer.level) * grade.fee * (offer.twist ? TWISTS[offer.twist].fee || 1 : 1) * (expert ? 1 + EXPERTISE.fee : 1) / 100) * 100
   const rep = repGain(result.overall, offer.level)
   const fresh = unlocksFor(offer.industry, grade.id).filter(id => !meta.unlocked.includes(id))
   const prevBest = meta.best[offer.briefId]
@@ -202,8 +204,26 @@ export function buyPack(career, id) {
 export function perks(career) {
   const out = (career?.packs || []).filter(id => PACKS[id]?.perk)
   if (career?.profile?.background) out.push(`bg:${career.profile.background}`)
+  for (const ind of profileById(career?.profile?.profileId)?.expertise || []) out.push(`exp:${ind}`)
   return out
 }
+export function isExpert(career, industry) {
+  return !!profileById(career?.profile?.profileId)?.expertise.includes(industry)
+}
+
+// A career counts as completed with 5+ passed commissions (and the studio not fired).
+export const COMPLETE_AT = 5
+export function careerCompleted(career) {
+  return career.status !== 'fired' && career.portfolio.length >= COMPLETE_AT
+}
+// Profiles a finished career would open up (founders unlock their four specialists).
+export function profilesEarned(meta, career) {
+  const prof = profileById(career?.profile?.profileId)
+  if (!prof?.base || !careerCompleted(career)) return []
+  const have = new Set(meta.profilesUnlocked || [])
+  return PROFILES_BY_FOUNDER(prof.id).filter(id => !have.has(id))
+}
+const PROFILES_BY_FOUNDER = (id) => PROFILES.filter(p => p.unlockBy === id).map(p => p.id)
 
 export function legacyTitle(career) {
   const n = career.portfolio.length
@@ -230,7 +250,9 @@ export function archiveCareer(meta, career) {
     works: career.portfolio.map(p => ({ briefId: p.briefId, client: p.client, overall: p.scores.overall, grade: p.grade, stars: p.stars, thumb: p.thumb })),
     endedAt: Date.now(),
   }
-  return { ...meta, careers: meta.careers + 1, legacy: [summary, ...meta.legacy].slice(0, 30) }
+  const earned = profilesEarned(meta, career)
+  summary.profilesEarned = earned
+  return { ...meta, careers: meta.careers + 1, legacy: [summary, ...meta.legacy].slice(0, 30), profilesUnlocked: [...(meta.profilesUnlocked || []), ...earned] }
 }
 
 export function styleNames(offer) { return offer.styles.map(s => STYLES[s]) }

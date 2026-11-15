@@ -9,7 +9,7 @@ import { inRoom, labelPoint, nearestEdge, normRect, roomArea, roomOutline, roomR
 export default function PlanView({
   project, li, tool, itemType, itemRot = 0, selection, fitSignal = 0,
   validateRect, validateItem, onTap, onRect, onStroke, onItemDrop, onMoveItem, flash,
-  moving = null, onMoveDrag, mergeIds = null, bubble = null, shaping = null,
+  moving = null, onMoveDrag, mergeIds = null, bubble = null, shaping = null, conflicts = null,
 }) {
   const wrap = useRef(null)
   const svg = useRef(null)
@@ -305,8 +305,8 @@ export default function PlanView({
           </g>
         ))}
 
-        {level.items.filter(it => ITEMS[it.type].overlay).map(it => <Item key={it.id} it={it} sel={selItem?.id === it.id} />)}
-        {level.items.filter(it => !ITEMS[it.type].overlay).map(it => <Item key={it.id} it={it} sel={selItem?.id === it.id} />)}
+        {level.items.filter(it => ITEMS[it.type].overlay).map(it => <Item key={it.id} it={it} sel={selItem?.id === it.id} bad={conflicts?.has(it.id)} />)}
+        {level.items.filter(it => !ITEMS[it.type].overlay).map(it => <Item key={it.id} it={it} sel={selItem?.id === it.id} bad={conflicts?.has(it.id)} />)}
 
         {merchLinks.map((l, i) => <line key={`ml${i}`} x1={l.a.x} y1={l.a.y} x2={l.b.x} y2={l.b.y} className={`merch-link ${l.kind}`} style={{ stroke: l.color }} />)}
         {edges.map(e => {
@@ -317,7 +317,7 @@ export default function PlanView({
 
         {level.rooms.map(r => { const lp = labelPoint(r); return roomArea(r) >= 4 && (
           <g key={`t${r.id}`} className="tag" transform={`translate(${lp.x} ${lp.y})`}>
-            <text y={-0.05} className="tag-name" style={r.w < 5 ? { fontSize: 0.36 } : undefined}>{ROOMS[r.type]?.label.toUpperCase()}</text>
+            <text y={-0.05} className="tag-name" style={r.w < 5 ? { fontSize: 0.36 } : undefined}>{ROOMS[r.type]?.label.toUpperCase()}{r.gender === 'women' ? ' ♀' : r.gender === 'men' ? ' ♂' : ''}</text>
             <text y={0.55} className="tag-area">{roomArea(r)} m²{r.w >= 7 ? ` · ${MATERIALS[r.floor]?.label}` : ''}</text>
           </g>
         ) })}
@@ -408,12 +408,13 @@ function Dim({ x1, y1, x2, y2, vertical, accent }) {
   )
 }
 
-function Item({ it, sel }) {
+function Item({ it, sel, bad }) {
   const s = itemSize(it)
   const def = ITEMS[it.type]
   return (
-    <g className={`item g-${def.group.toLowerCase()} ${def.overlay ? 'overlay' : ''} ${sel ? 'sel' : ''}`} transform={`translate(${it.x} ${it.y})`}>
+    <g className={`item g-${def.group.toLowerCase()} ${def.overlay ? 'overlay' : ''} ${sel ? 'sel' : ''} ${bad ? 'conflict' : ''}`} transform={`translate(${it.x} ${it.y})`}>
       <g className="item-pop"><ItemSymbol type={it.type} w={s.w} h={s.h} product={it.product} /></g>
+      {bad && <rect width={s.w} height={s.h} className="conflict-box" />}
       {sel && <rect width={s.w} height={s.h} className="sel-box" />}
     </g>
   )

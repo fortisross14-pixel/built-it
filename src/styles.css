@@ -1189,3 +1189,63 @@ h3.title-pair { font-size: 19px; margin: 0; letter-spacing: -.01em; }
 .ios-help { flex-basis: 100%; }
 /* Installed app: no browser chrome, so keep content clear of the status bar */
 @media (display-mode: standalone) { body { overscroll-behavior-y: none; } }
+
+/* Overlapping items (free rotation): red until moved */
+.conflict-box { fill: rgba(214, 64, 52, .22); stroke: #d64034; stroke-width: .09; stroke-dasharray: .22 .12; animation: march 1s linear infinite; pointer-events: none; }
+.item.conflict .sym { stroke: #d64034; }
+.gender-sel { max-width: 7.5em; }
+
+/* Review: tap a rating for its breakdown */
+button.sbar { all: unset; box-sizing: border-box; display: grid; grid-template-columns: 120px 1fr 40px 16px; gap: 12px; align-items: center; width: 100%; padding: 8px 0; cursor: pointer; }
+button.sbar:disabled { cursor: default; grid-template-columns: 120px 1fr 40px 0; }
+button.sbar:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
+button.sbar svg { transition: transform .3s cubic-bezier(.2,.8,.2,1); opacity: .5; }
+.sbar-wrap.open button.sbar svg { transform: rotate(90deg); opacity: 1; }
+.sbar-wrap + .sbar-wrap { border-top: 1px solid var(--line); }
+.sb-detail { list-style: none; margin: 4px 0 14px; padding: 12px 14px; background: var(--card, #fff); border: 1px solid var(--line); border-radius: 6px; display: grid; gap: 10px; animation: sbIn .35s cubic-bezier(.2,.8,.2,1) both; }
+.sb-detail > li { display: grid; grid-template-columns: 10px 1fr; gap: 10px; font-size: 13px; line-height: 1.35; }
+.sb-detail b { font-weight: 600; }
+.sb-detail em { font-style: normal; opacity: .55; font-size: 11px; }
+.sb-detail p { margin: 2px 0 0; opacity: .75; }
+.sb-detail ul { margin: 4px 0 0; padding-left: 16px; opacity: .75; }
+.sb-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 4px; background: var(--ok, #3a8a5c); }
+.sb-detail li.mid .sb-dot { background: var(--warn); }
+.sb-detail li.bad .sb-dot { background: var(--bad); }
+.sb-hint { margin: 6px 0 0; }
+@keyframes sbIn { from { opacity: 0; transform: translateY(-6px); } }
+@media (prefers-reduced-motion: reduce) { .sb-detail { animation: none; } }
+
+/* Architect profiles */
+.prof-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin: 18px 0; }
+.prof-card { position: relative; display: grid; gap: 4px; align-content: start; padding: 10px 10px 12px; text-align: left; background: var(--panel); border: 1px solid #fff; border-radius: 16px; box-shadow: var(--shadow-1); color: var(--text); transition: transform .15s, box-shadow .2s, opacity .2s; }
+.prof-card:active { transform: scale(.98); }
+.prof-card.on { box-shadow: 0 0 0 2px var(--ink, #111) inset, var(--shadow-1); }
+.prof-card .pc-img { position: relative; display: block; aspect-ratio: 1; border-radius: 12px; overflow: hidden; background: #ecebe6; margin-bottom: 4px; }
+.prof-card .pc-img img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.prof-card .pc-num { position: absolute; top: 14px; left: 16px; font-size: 11px; opacity: .6; }
+.prof-card b { font-family: var(--display); font-size: 14px; }
+.prof-card .pc-meta { font-size: 11.5px; color: var(--dim); line-height: 1.35; }
+.prof-card.locked .pc-img img { filter: grayscale(1) contrast(.8) brightness(1.08); opacity: .45; }
+.prof-card.locked b, .prof-card.locked .pc-meta { opacity: .55; }
+.pc-lock { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink, #111); }
+.pc-unlock { font-size: 11px; font-weight: 600; margin-top: 2px; }
+.prof-perks { display: grid; gap: 6px; font-size: 13px; line-height: 1.45; }
+.prof-perks p { margin: 0; }
+.sig-row { display: grid; gap: 6px; margin-bottom: 8px; }
+.sig-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.sig-chips .tag-chip { display: inline-flex; align-items: center; gap: 6px; }
+.sig-chips .tag-chip i { width: 10px; height: 10px; border-radius: 3px; border: 1px solid rgba(0,0,0,.15); }
+.prof-unlock { padding: 16px; background: var(--panel); border-radius: 20px; box-shadow: var(--shadow-1); margin: 18px 0; animation: sbIn .5s both; }
+.pu-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.pu { display: grid; gap: 4px; text-align: center; font-size: 11px; }
+.pu img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 12px; }
+.checklist li.part .tick { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 25%, transparent); }
+.checklist li.part em { color: var(--warn); }
+@media (max-width: 520px) {
+  .prof-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .prof-card { padding: 6px 6px 9px; border-radius: 13px; }
+  .prof-card b { font-size: 12.5px; line-height: 1.15; }
+  .prof-card .pc-meta { font-size: 10.5px; }
+  .prof-card .pc-num { top: 10px; left: 11px; font-size: 10px; }
+  .pc-unlock { font-size: 10px; line-height: 1.25; }
+}
