@@ -10,7 +10,7 @@ import { buildModel, disposeGroup, frameCamera, setupLights } from './scene.js'
 // With onTap, a quick tap picks a point on the floor of `pickLevel` and reports the cell.
 export default function View3D({
   project, cutLevel = null, autoRotate = false, interactive = true, className = '', zoom = 1,
-  night = false, pickLevel = null, onTap, onHover, highlights = [], pulse = null, focusLevel = null,
+  night = false, pickLevel = null, onTap, onHover, highlights = [], pulse = null, focusLevel = null, showCeilings = false,
 }) {
   const host = useRef(null)
   const state = useRef(null)
@@ -156,7 +156,7 @@ export default function View3D({
     s.scene.clear()
     setupLights(s.scene, project, night, cutLevel, s.lowEnd ? 1024 : 2048)
     s.scene.environmentIntensity = night ? 0.06 : 0.45
-    s.model = buildModel(project, { cutLevel })
+    s.model = buildModel(project, { cutLevel, showCeilings })
     s.scene.add(s.model, s.overlay)
     s.project = project; s.zoom = zoom
     const key = `${project.lot.w}x${project.lot.h}:${project.levels.length}`
@@ -166,7 +166,7 @@ export default function View3D({
       s.framedFor = key
     }
     s.invalidate(); s.wake()
-  }, [project, cutLevel, night])
+  }, [project, cutLevel, night, showCeilings])
 
   // Glide the orbit target to the active level instead of snapping (camera-systems skill).
   useEffect(() => {

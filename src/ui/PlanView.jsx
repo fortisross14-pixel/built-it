@@ -8,6 +8,7 @@ import { nearestEdge, normRect, wallEdges, roomArea } from '../engine/plan.js'
 export default function PlanView({
   project, li, tool, itemType, itemRot = 0, selection, fitSignal = 0,
   validateRect, validateItem, onTap, onRect, onStroke, onItemDrop, onMoveItem, flash,
+  moving = null, onMoveDrag, mergeIds = null, bubble = null,
 }) {
   const wrap = useRef(null)
   const svg = useRef(null)
@@ -116,6 +117,7 @@ export default function PlanView({
     const p = toWorld(e.clientX, e.clientY)
     const start = { x: e.clientX, y: e.clientY, t: performance.now(), view: v, p }
     if (e.pointerType === 'mouse' && e.button !== 0) return begin({ kind: 'pan', ...start, noTap: true })
+    if (moving) return begin({ kind: 'roomMove', ...start, base: { dx: moving.dx, dy: moving.dy } })
     if (tool === 'room') return begin({ kind: 'rect', ...start, a: cellOf(p), b: cellOf(p) })
     if (tool === 'window') {
       const ne = nearestEdge(p.wx, p.wy)
@@ -165,6 +167,7 @@ export default function PlanView({
       if (ne.dist < 0.4 && !cur.keys.includes(ne.key)) next = { ...cur, keys: [...cur.keys, ne.key] }
     }
     if (cur.kind === 'ghost') next = { ...cur, o: itemOrigin(p) }
+    if (cur.kind === 'roomMove') { onMoveDrag?.(cur.base.dx + Math.round(p.wx - cur.p.wx), cur.base.dy + Math.round(p.wy - cur.p.wy)); return }
     if (cur.kind === 'move') next = { ...cur, o: { x: Math.round(p.wx - cur.dx), y: Math.round(p.wy - cur.dy) }, moved: cur.moved || moved > 6 }
     if (next !== cur) { g.current = next; setGesture(next) }
   }
@@ -240,7 +243,7 @@ export default function PlanView({
     const s = itemSize(ghostAt)
     const ok = gesture?.kind === 'move' ? true : validateItem ? validateItem(ghostAt).ok : true
     ghost = (
-      <g className={`ghost ${ok ? 'ok' : 'bad'}`} transform={`translate(${ghostAt.x} ${ghostAt.y})`}>
+      <g className={`pghost ${ok ? 'ok' : 'bad'}`} transform={`translate(${ghostAt.x} ${ghostAt.y})`}>
         <rect width={s.w} height={s.h} />
         <ItemSymbol type={ghostAt.type} w={s.w} h={s.h} />
       </g>
@@ -256,6 +259,18 @@ export default function PlanView({
     return { minX, minY, maxX, maxY }
   }, [level])
   const selRoom = selection?.kind === 'room' ? level.rooms.find(r => r.id === selection.id) : null
+  const movingRoom = moving ? level.rooms.find(r => r.id === moving.id) : null
+  // Screen position for the room bubble: above the room (or its moving ghost), clamped on screen.
+  let bubblePos = null
+  const anchor = movingRoom ? { ...movingRoom, x: movingRoom.x + moving.dx, y: movingRoom.y + moving.dy } : selRoom
+  if (bubble && anchor && size.w > 1) {
+    const sx = (anchor.x + anchor.w / 2 - vb[0]) * v.z
+    const top = (anchor.y - vb[1]) * v.z, bottom = (anchor.y + anchor.h - vb[1]) * v.z
+    const below = top < 70
+    const bw = Math.min(340, size.w - 16)
+    const left = Math.max(bw / 2 + 8, Math.min(size.w - bw / 2 - 8, sx))
+    bubblePos = { left, top: below ? Math.min(size.h - 12, bottom + 10) : top - 10, below, bw, ax: Math.max(-bw / 2 + 20, Math.min(bw / 2 - 20, sx - left)) }
+  }
   const selItem = selection?.kind === 'item' ? level.items.find(r => r.id === selection.id) : null
 
   return (
@@ -309,10 +324,22 @@ export default function PlanView({
 
         {hoverEdge && hoverEdge.dist < 0.4 && <HoverEdge k={hoverEdge.key} />}
         {gesture?.kind === 'stroke' && gesture.keys.map(k => <HoverEdge key={k} k={k} />)}
+        {mergeIds && level.rooms.filter(r => mergeIds.has(r.id)).map(r => <rect key={`m${r.id}`} x={r.x + 0.15} y={r.y + 0.15} width={r.w - 0.3} height={r.h - 0.3} className="merge-cand" />)}
+        {movingRoom && (
+          <g className={`move-ghost ${moving.ok ? 'ok' : 'bad'}`} transform={`translate(${moving.dx} ${moving.dy})`}>
+            <rect x={movingRoom.x} y={movingRoom.y} width={movingRoom.w} height={movingRoom.h} style={{ fill: ROOMS[movingRoom.type]?.color }} />
+            {level.items.filter(it => !ITEMS[it.type].site && it.x >= movingRoom.x && it.x < movingRoom.x + movingRoom.w && it.y >= movingRoom.y && it.y < movingRoom.y + movingRoom.h).map(it => {
+              const sz = itemSize(it)
+              return <g key={it.id} transform={`translate(${it.x} ${it.y})`}><ItemSymbol type={it.type} w={sz.w} h={sz.h} /></g>
+            })}
+            <rect x={movingRoom.x} y={movingRoom.y} width={movingRoom.w} height={movingRoom.h} className="move-outline" />
+          </g>
+        )}
         {preview}
         {ghost}
         {tool === 'room' && hover && !gesture && <rect x={Math.floor(hover.wx)} y={Math.floor(hover.wy)} width={1} height={1} className="cursor-cell" />}
       </svg>
+      {bubblePos && <div className={`room-bubble ${bubblePos.below ? 'below' : ''}`} style={{ left: bubblePos.left, top: bubblePos.top, '--bw': `${bubblePos.bw}px`, '--ax': `${bubblePos.ax}px` }} onPointerDown={e => e.stopPropagation()}>{bubble}</div>}
       <div className="plan-hud">
         <button className="hud-btn" onClick={fit} aria-label="Fit to lot">⤢</button>
         <button className="hud-btn" onClick={() => zoomBy(1.4)} aria-label="Zoom in">+</button>
@@ -433,6 +460,23 @@ export function ItemSymbol({ type, w, h }) {
     case 'stage': return <g><rect x={i} y={i} width={w - i * 2} height={h - i * 2} className="sym" fill="url(#hatch)" /></g>
     case 'greenWall': return <g><rect x={i} y={i} width={w - i * 2} height={h - i * 2} className="sym-tree" /></g>
     case 'neonSign': return <g><rect x={0.15} y={h / 2 - 0.12} width={w - 0.3} height={0.24} className="sym fill-neon" /></g>
+    case 'rackWomen': case 'rackMen': case 'rackKids': {
+      const tint = { rackWomen: '#e7a9b8', rackMen: '#9fb2c6', rackKids: '#f2d27a' }[type]
+      const along = w >= h
+      return <g>{box}<rect x={along ? 0.15 : w / 2 - 0.2} y={along ? h / 2 - 0.2 : 0.15} width={along ? w - 0.3 : 0.4} height={along ? 0.4 : h - 0.3} style={{ fill: tint }} className="sym" />{along ? <line x1={0.1} y1={h / 2} x2={w - 0.1} y2={h / 2} className="sym-line" /> : <line x1={w / 2} y1={0.1} x2={w / 2} y2={h - 0.1} className="sym-line" />}</g>
+    }
+    case 'fridgeProduce': case 'fridgeMeat': case 'fridgeDairy': case 'drinksFridge': {
+      const tint = { fridgeProduce: '#a8d18d', fridgeMeat: '#e8a2a0', fridgeDairy: '#f3efe2', drinksFridge: '#9cc3e8' }[type]
+      return <g>{box}<rect x={0.2} y={0.2} width={w - 0.4} height={h - 0.4} style={{ fill: tint }} className="sym" /><path d={`M0.2 0.2 L${w - 0.2} ${h - 0.2}`} className="sym-dash" /></g>
+    }
+    case 'shelfProduce': case 'shelfSnacks': case 'shelfCondiments': {
+      const tint = { shelfProduce: '#d9b27a', shelfSnacks: '#f2c14e', shelfCondiments: '#d98c6a' }[type]
+      return <g>{box}{Array.from({ length: Math.round(Math.max(w, h)) * 2 - 1 }, (_, k) => w >= h ? <line key={k} x1={(k + 1) * 0.5} y1={i} x2={(k + 1) * 0.5} y2={h - i} className="sym-line" /> : <line key={k} y1={(k + 1) * 0.5} x1={i} y2={(k + 1) * 0.5} x2={w - i} className="sym-line" />)}<rect x={0.12} y={0.12} width={w - 0.24} height={h - 0.24} style={{ fill: tint, opacity: 0.5 }} /></g>
+    }
+    case 'courtLines': return <g><rect x={0.05} y={0.05} width={w - 0.1} height={h - 0.1} className="sym-dash" /><line x1={w / 2} y1={0.05} x2={w / 2} y2={h - 0.05} className="sym-dash" /><circle cx={w / 2} cy={h / 2} r={0.7} className="sym-dash" /></g>
+    case 'rug': return <g><rect x={0.15} y={0.15} width={w - 0.3} height={h - 0.3} className="sym-dash" /></g>
+    case 'spotTrack': case 'linear': case 'scoreboard': case 'departures': return <g><rect x={0.15} y={h / 2 - 0.15} width={w - 0.3} height={0.3} className="sym-light" /></g>
+    case 'palm': return <g><circle cx={w / 2} cy={h / 2} r={0.42} className="sym-tree" /><path d={`M${w / 2 - 0.4} ${h / 2} h0.8 M${w / 2} ${h / 2 - 0.4} v0.8`} className="sym-line" /></g>
     default: {
       const label = (ITEMS[type]?.label || '?').split(' ').map(s => s[0]).join('').slice(0, 2).toUpperCase()
       return <g>{box}<text x={w / 2} y={h / 2 + 0.16} className="sym-text">{label}</text></g>

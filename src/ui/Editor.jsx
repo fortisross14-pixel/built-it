@@ -2,54 +2,51 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import Icon from './icons.jsx'
 import PlanView, { ItemSymbol } from './PlanView.jsx'
 import View3D from './View3D.jsx'
-import { ITEMS, MATERIALS, PAINTS, QUALITY, ROOMS, STYLES, isDecorLayer, itemCost, itemSize, materialsOfKind, q } from '../game/catalog.js'
+import { CEILINGS, DOORS, FAMILIES, INDUSTRIES, ITEMS, MATERIALS, PAINTS, QUALITY, ROOMS, STYLES, familyOf, isDecorLayer, itemCost, itemSize, materialsOfKind } from '../game/catalog.js'
 import { BRIEFS, TWISTS } from '../game/briefs.js'
-import { CARDS } from '../game/cards.js'
+import { available, lockReason } from '../game/packs.js'
 import {
-  addLevel, addRoom, canPlaceItem, canPlaceRoom, duplicateLevel, itemAt, itemCells, moveItem, nearestEdge,
-  placeItem, removeItem, removeRoom, removeTopLevel, roomAt, roomArea, setOpening, toggleOpening, updateRoom,
+  addLevel, addRoom, canPlaceItem, canPlaceRoom, duplicateLevel, itemAt, itemCells, mergeCandidates, mergeRooms, moveItem, moveRoom,
+  nearestEdge, placeItem, removeItem, removeRoom, removeTopLevel, roomAt, roomArea, setOpening, toggleOpening, updateRoom,
 } from '../engine/plan.js'
 import { evaluate } from '../engine/score.js'
 import { money } from './format.js'
 import { feedback } from './fx.js'
 
-// Two layers: Design (2D plan: the building and its furniture) and Decorate (3D: finishes, decor, lighting).
+// Two layers: Design (2D plan: rooms, openings, furniture) and Decorate (3D: finishes, decor, lighting).
+// Catalog tools (Room, Furnish, Decor, Lights) open a catalog; you pick one thing, place as many as
+// you like, and the red ✕ ends placing.
 const LAYERS = {
   design: [
     { id: 'select', label: 'Select', icon: 'select' },
-    { id: 'room', label: 'Room', icon: 'room' },
+    { id: 'room', label: 'Room', icon: 'room', catalog: true },
+    { id: 'furnish', label: 'Furnish', icon: 'sofa', catalog: true },
     { id: 'door', label: 'Door', icon: 'door' },
     { id: 'window', label: 'Window', icon: 'window' },
-    { id: 'furnish', label: 'Furnish', icon: 'sofa' },
     { id: 'erase', label: 'Erase', icon: 'eraser' },
   ],
   decorate: [
     { id: 'look', label: 'Select', icon: 'select' },
     { id: 'floor', label: 'Floor', icon: 'grid' },
     { id: 'paint', label: 'Paint', icon: 'brush' },
+    { id: 'ceiling', label: 'Ceiling', icon: 'layers' },
     { id: 'facade', label: 'Facade', icon: 'building' },
-    { id: 'decor', label: 'Decor', icon: 'leaf' },
-    { id: 'light', label: 'Lights', icon: 'bulb' },
+    { id: 'decor', label: 'Decor', icon: 'leaf', catalog: true },
+    { id: 'light', label: 'Lights', icon: 'bulb', catalog: true },
     { id: 'remove', label: 'Remove', icon: 'eraser' },
   ],
 }
 
 const HINTS = {
-  select: 'Tap a room or item to edit it. Drag a selected item to move it. Two fingers pan and zoom.',
-  room: 'Pick a room type, then drag across the grid to draw it.',
+  select: 'Tap a room for Move / Merge / Erase, or an item to edit it. Two fingers pan and zoom.',
   door: 'Tap a wall to add or remove a door. Doors on outside walls are entrances.',
   window: 'Tap or drag along outside walls to add windows.',
-  furnish: 'Pick an item and a quality, then tap or drag it into place.',
-  erase: 'Tap an item, door, window or room to remove it.',
+  erase: 'Tap furniture, a door or a window to remove it. Rooms are removed from their Select bubble.',
   look: 'Drag to orbit, pinch to zoom. Tap a room or a decoration to edit it.',
-  facade: 'The facade material wraps the whole building.',
   remove: 'Tap a decoration or a light to remove it.',
+  placing: 'Tap or drag to place as many as you like. Press ✕ when you are done.',
+  placingRoom: 'Drag across the grid to draw rooms. Press ✕ when you are done.',
 }
-
-const unlockedMaterial = (id, kit) => MATERIALS[id].base || kit.includes(MATERIALS[id].card)
-const unlockedItem = (id, kit) => !ITEMS[id].card || kit.includes(ITEMS[id].card)
-const DESIGN_GROUPS = ['Brief', 'Furniture', 'Equipment', 'Vertical', 'Special']
-const DECOR_GROUPS = ['Decor', 'Site', 'Special']
 
 function decorAt(level, x, y, preferCeiling) {
   const hits = level.items.filter(it => isDecorLayer(it.type) && itemCells(it).some(c => c.x === x && c.y === y))
@@ -57,28 +54,42 @@ function decorAt(level, x, y, preferCeiling) {
   return preferCeiling ? ceil || floor : floor || ceil
 }
 
-export default function Editor({ offer, kit, project: initial, onChange, onSubmit, onExit }) {
+// "This project" filter: only what belongs to this brief's industry and rooms.
+function relevantItem(id, brief) {
+  const def = ITEMS[id]
+  const program = new Set(brief.rooms.map(r => r.type))
+  if (brief.items.some(r => r.type === id || (r.family && familyOf(id) === r.family))) return true
+  if (def.ind) return def.ind.includes(brief.industry)
+  if (def.vertical) return brief.levels.max > 1
+  if (!def.rooms) return true
+  return def.rooms.some(r => program.has(r) && !ROOMS[r].basic)
+}
+
+export default function Editor({ offer, kit, ctx, project: initial, onChange, onSubmit, onExit }) {
   const brief = BRIEFS[offer.briefId]
   const [project, setProject] = useState(initial)
   const [past, setPast] = useState([])
   const [future, setFuture] = useState([])
   const [li, setLi] = useState(0)
   const [layer, setLayer] = useState('design')
-  const [tool, setTool] = useState('room')
-  const [roomType, setRoomType] = useState(brief.rooms[0].type)
-  const [itemType, setItemType] = useState(null)
-  const [decoType, setDecoType] = useState('plant')
-  const [lightType, setLightType] = useState('downlight')
+  const [tool, setTool] = useState('select')
+  const [catalog, setCatalog] = useState(project.levels[0].rooms.length ? null : 'room')
+  const [placing, setPlacing] = useState(null) // { kind: 'room' | 'item', type }
+  const [showAll, setShowAll] = useState(false)
   const [itemRot, setItemRot] = useState(0)
   const [quality, setQuality] = useState(1)
   const [floorMat, setFloorMat] = useState('vinyl')
   const [paint, setPaint] = useState('chalk')
+  const [ceil, setCeil] = useState('plain')
   const [selection, setSelection] = useState(null)
+  const [moving, setMoving] = useState(null)
+  const [merging, setMerging] = useState(null)
+  const [confirmErase, setConfirmErase] = useState(null)
   const [toast, setToast] = useState(null)
   const [briefOpen, setBriefOpen] = useState(false)
   const [levelMenu, setLevelMenu] = useState(false)
   const [confirm, setConfirm] = useState(false)
-  const [showAll, setShowAll] = useState(false)
+  const [wholeBuilding, setWholeBuilding] = useState(false)
   const [night, setNight] = useState(false)
   const [hover, setHover] = useState(null)
   const [flash, setFlash] = useState(null)
@@ -95,7 +106,7 @@ export default function Editor({ offer, kit, project: initial, onChange, onSubmi
     clearTimeout(toastTimer.current)
     if (kind === 'error') feedback('error')
     setToast({ text, kind, id: Date.now() })
-    toastTimer.current = setTimeout(() => setToast(null), 2600)
+    toastTimer.current = setTimeout(() => setToast(null), 2800)
   }
   const commit = (res, okMsg, ev = 'place') => {
     const next = res?.project ?? res
@@ -106,68 +117,89 @@ export default function Editor({ offer, kit, project: initial, onChange, onSubmi
     if (okMsg) say(okMsg)
     return true
   }
-  const undo = () => { if (!past.length) return; feedback('undo'); setFuture(f => [project, ...f]); setProject(past[past.length - 1]); setPast(p => p.slice(0, -1)); setSelection(null) }
+  const undo = () => { if (!past.length) return; feedback('undo'); setFuture(f => [project, ...f]); setProject(past[past.length - 1]); setPast(p => p.slice(0, -1)); setSelection(null); setMoving(null); setMerging(null) }
   const redo = () => { if (!future.length) return; feedback('undo'); setPast(p => [...p, project]); setProject(future[0]); setFuture(f => f.slice(1)) }
 
-  const deleteSelection = () => {
-    if (!selection) return
-    if (selection.kind === 'room') commit(removeRoom(project, li, selection.id), null, 'remove')
-    else commit(removeItem(project, li, selection.id), null, 'remove')
-    setSelection(null)
-  }
+  const clearModes = () => { setSelection(null); setMoving(null); setMerging(null) }
+  const stopPlacing = () => { setPlacing(null); setTool(layer === 'design' ? 'select' : 'look'); feedback('tool') }
 
   useEffect(() => {
     const onKey = (e) => {
-      if (e.target.tagName === 'INPUT') return
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo() }
       else if (e.key === 'r') setItemRot(r => (r + 1) % 2)
-      else if ((e.key === 'Delete' || e.key === 'Backspace') && selection) deleteSelection()
-      else if (e.key === 'Escape') setSelection(null)
+      else if ((e.key === 'Delete' || e.key === 'Backspace') && selection?.kind === 'item') { commit(removeItem(project, li, selection.id), null, 'remove'); setSelection(null) }
+      else if (e.key === 'Escape') { if (catalog) setCatalog(null); else if (placing) stopPlacing(); else clearModes() }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   })
 
   const switchLayer = (l) => {
-    if (l !== layer) feedback('tool')
-    setLayer(l); setSelection(null); setHover(null)
+    if (l === layer) return
+    feedback('tool')
+    setLayer(l); clearModes(); setHover(null); setPlacing(null); setCatalog(null)
     setTool(l === 'design' ? 'select' : 'look')
   }
-  const pickTool = (t) => { if (t !== tool) feedback('tool'); setTool(t); setSelection(null); if (t === 'furnish' && !itemType) setItemType(brief.items[0].type) }
+  const pickTool = (t) => {
+    if (t.id !== tool) feedback('tool')
+    clearModes(); setPlacing(null)
+    setTool(t.id)
+    if (t.catalog) setCatalog(t.id)
+  }
+  const pickFromCatalog = (kind, type) => {
+    feedback('select')
+    setPlacing({ kind, type })
+    setCatalog(null)
+    if (kind === 'room') setTool('room')
+  }
 
-  // ---------------------------------------------------------------- Design (2D) handlers
+  // ---------------------------------------------------------------- Design (2D)
+  const planTool = placing?.kind === 'room' ? 'room' : placing && layer === 'design' ? 'furnish' : tool === 'room' || tool === 'furnish' ? 'select' : tool
+  const itemType = placing?.kind === 'item' ? placing.type : null
+
   const handleTap = ({ wx, wy, x, y }) => {
-    if (tool === 'select' || tool === 'room') {
-      const it = tool === 'select' ? itemAt(level, x, y) : null
+    if (moving) return
+    if (merging) {
+      const r = roomAt(level, x, y)
+      if (r && merging.ids.has(r.id)) {
+        const res = mergeRooms(project, li, merging.id, r.id)
+        if (commit(res, `Merged into one ${ROOMS[res.room.type].label.toLowerCase()} · ${roomArea(res.room)} m²`, 'room')) setSelection({ kind: 'room', id: res.room.id })
+      } else say('Tap one of the highlighted rooms, or Cancel.')
+      setMerging(null)
+      return
+    }
+    if (planTool === 'select') {
+      const it = itemAt(level, x, y)
       if (it) { feedback('select'); return setSelection({ kind: 'item', id: it.id }) }
       const r = roomAt(level, x, y)
-      if (r) { feedback('select'); setSelection({ kind: 'room', id: r.id }); if (tool === 'room') setTool('select'); return }
+      if (r) { feedback('select'); return setSelection({ kind: 'room', id: r.id }) }
       return setSelection(null)
     }
-    if (tool === 'door') {
+    if (planTool === 'door') {
       const e = nearestEdge(wx, wy)
       if (e.dist > 0.45) return say('Tap closer to a wall.')
       return commit(toggleOpening(project, li, e.key, 'door'), null, 'opening')
     }
-    if (tool === 'erase') {
+    if (planTool === 'erase') {
       const it = itemAt(level, x, y)
       if (it) return commit(removeItem(project, li, it.id), null, 'remove')
       const e = nearestEdge(wx, wy)
-      if (e.dist < 0.3) {
+      if (e.dist < 0.35) {
         if (level.doors.includes(e.key)) return commit(toggleOpening(project, li, e.key, 'door'), null, 'remove')
         if (level.windows.includes(e.key)) return commit(toggleOpening(project, li, e.key, 'window'), null, 'remove')
       }
-      const r = roomAt(level, x, y)
-      if (r) return commit(removeRoom(project, li, r.id), null, 'remove')
+      if (roomAt(level, x, y)) say('Erase only removes objects. To remove a room, Select it and use Erase in its bubble.')
+      return
     }
-    if (tool === 'furnish' && itemType) {
+    if (planTool === 'furnish' && itemType) {
       const s = itemSize({ type: itemType, rot: itemRot })
       handleDrop({ x: Math.round(wx - s.w / 2), y: Math.round(wy - s.h / 2) })
     }
   }
   const handleRect = (rect) => {
-    const res = addRoom(project, li, rect, roomType, floorMat)
-    if (commit(res, null, 'room')) setSelection({ kind: 'room', id: res.room.id })
+    if (placing?.kind !== 'room') return
+    commit(addRoom(project, li, rect, placing.type, floorMat), null, 'room')
   }
   const handleStroke = (keys) => {
     let p = project, last = null
@@ -181,31 +213,89 @@ export default function Editor({ offer, kit, project: initial, onChange, onSubmi
   const handleDrop = (o) => { if (itemType) commit(placeItem(project, li, { type: itemType, rot: itemRot, q: quality, ...o })) }
   const handleMove = (id, o) => commit(moveItem(project, li, id, o))
 
-  // ---------------------------------------------------------------- Decorate (3D) handlers
-  const placing = tool === 'decor' ? decoType : tool === 'light' ? lightType : null
+  const selRoom = selection?.kind === 'room' ? level.rooms.find(r => r.id === selection.id) : null
+  const selItem = selection?.kind === 'item' ? level.items.find(r => r.id === selection.id) : null
+  const moveCheck = useMemo(() => moving ? moveRoom(project, li, moving.id, moving.dx, moving.dy) : null, [moving, project, li])
+
+  const startMove = () => { feedback('tool'); setMoving({ id: selRoom.id, dx: 0, dy: 0 }) }
+  const confirmMove = () => {
+    if (!moving.dx && !moving.dy) { setMoving(null); return }
+    if (commit(moveCheck, null, 'room')) setMoving(null)
+  }
+  const startMerge = () => {
+    const cands = mergeCandidates(level, selRoom)
+    if (!cands.length) return say(`No neighbouring ${ROOMS[selRoom.type].label.toLowerCase()} shares a whole wall with this one.`)
+    if (cands.length === 1) {
+      const res = mergeRooms(project, li, selRoom.id, cands[0].id)
+      if (commit(res, `Merged · ${roomArea(res.room)} m²`, 'room')) setSelection({ kind: 'room', id: res.room.id })
+      return
+    }
+    feedback('tool')
+    setMerging({ id: selRoom.id, ids: new Set(cands.map(r => r.id)) })
+    say('Tap the room to merge with.')
+  }
+
+  let bubble = null
+  if (layer === 'design' && moving) {
+    bubble = (
+      <div className="bubble-row">
+        <span className="mono">{moving.dx || moving.dy ? `${moving.dx >= 0 ? '+' : ''}${moving.dx}, ${moving.dy >= 0 ? '+' : ''}${moving.dy} m` : 'Drag to move'}</span>
+        <button className="bb ok" disabled={!!moveCheck?.error} onClick={confirmMove}><Icon name="check" size={16} />Place</button>
+        <button className="bb" onClick={() => setMoving(null)}><Icon name="x" size={16} />Cancel</button>
+        {moveCheck?.error && (moving.dx || moving.dy) ? <em className="bb-err">{moveCheck.error}</em> : null}
+      </div>
+    )
+  } else if (layer === 'design' && merging) {
+    bubble = <div className="bubble-row"><span>Tap a highlighted room</span><button className="bb" onClick={() => setMerging(null)}><Icon name="x" size={16} />Cancel</button></div>
+  } else if (layer === 'design' && selRoom) {
+    const program = [...new Set(brief.rooms.map(r => r.type))]
+    const types = [...program, ...Object.keys(ROOMS).filter(t => !program.includes(t) && (showAll || ROOMS[t].basic))]
+    const canMerge = mergeCandidates(level, selRoom).length > 0
+    bubble = (
+      <div className="bubble-col">
+        <div className="bubble-head">
+          <i className="sw" style={{ background: ROOMS[selRoom.type].color }} />
+          <select value={selRoom.type} aria-label="Room type" onChange={(e) => commit(updateRoom(project, li, selRoom.id, { type: e.target.value, floor: ROOMS[e.target.value].wet && !MATERIALS[selRoom.floor].wetSafe ? 'ceramic' : selRoom.floor }), null, 'select')}>
+            {types.map(t => <option key={t} value={t}>{ROOMS[t].label}</option>)}
+          </select>
+          <span className="mono dim">{selRoom.w}×{selRoom.h} · {roomArea(selRoom)} m²</span>
+          <button className="bb icon" onClick={() => setSelection(null)} aria-label="Close"><Icon name="x" size={16} /></button>
+        </div>
+        <div className="bubble-row">
+          <button className="bb" onClick={startMove}><Icon name="move" size={16} />Move</button>
+          <button className="bb" onClick={startMerge} disabled={!canMerge} title={canMerge ? '' : 'Needs a same-type neighbour sharing a whole wall'}><Icon name="merge" size={16} />Merge</button>
+          <button className="bb danger" onClick={() => { feedback('tap'); setConfirmErase(selRoom.id) }}><Icon name="trash" size={16} />Erase</button>
+        </div>
+      </div>
+    )
+  }
+
+  // ---------------------------------------------------------------- Decorate (3D)
+  const placing3D = layer === 'decorate' && placing?.kind === 'item' ? placing.type : null
   const originAt = (p, type) => { const s = itemSize({ type, rot: itemRot }); return { x: Math.round(p.wx - s.w / 2), y: Math.round(p.wy - s.h / 2) } }
   const tap3D = (p) => {
     const room = roomAt(level, p.x, p.y)
+    if (placing3D) {
+      if (ITEMS[placing3D].site && li !== 0) return say('Landscaping goes on the ground level.')
+      const o = originAt(p, placing3D), sz = itemSize({ type: placing3D, rot: itemRot })
+      if (commit(placeItem(project, li, { type: placing3D, rot: itemRot, q: quality, ...o }))) setPulse({ x: o.x + sz.w / 2, y: o.y + sz.h / 2, w: sz.w, h: sz.h, li, ceiling: ITEMS[placing3D].ceiling, id: Date.now() })
+      return
+    }
     if (tool === 'look') {
-      const it = decorAt(level, p.x, p.y, false) || (itemAt(level, p.x, p.y))
+      const it = decorAt(level, p.x, p.y, false) || itemAt(level, p.x, p.y)
       if (it) { feedback('select'); return setSelection({ kind: 'item', id: it.id }) }
       if (room) feedback('select')
       return setSelection(room ? { kind: 'room', id: room.id } : null)
     }
-    if (tool === 'floor' || tool === 'paint') {
+    if (['floor', 'paint', 'ceiling'].includes(tool)) {
       if (!room) return say('Tap inside a room.')
       if (tool === 'floor') {
         if (ROOMS[room.type].wet && !MATERIALS[floorMat].wetSafe) return say(`${MATERIALS[floorMat].label} isn't water-safe. Not for a ${ROOMS[room.type].label.toLowerCase()}.`, 'error')
         commit(updateRoom(project, li, room.id, { floor: floorMat, floorQ: quality }), null, 'paint')
-      } else commit(updateRoom(project, li, room.id, { wall: paint, wallQ: quality }), null, 'paint')
-      setPulse({ x: p.wx, y: p.wy, w: 2, h: 2, li, id: Date.now() })
+      } else if (tool === 'paint') commit(updateRoom(project, li, room.id, { wall: paint, wallQ: quality }), null, 'paint')
+      else commit(updateRoom(project, li, room.id, { ceiling: ceil }), null, 'paint')
+      setPulse({ x: p.wx, y: p.wy, w: 2, h: 2, li, ceiling: tool === 'ceiling', id: Date.now() })
       setFlash(room.id); setTimeout(() => setFlash(null), 300)
-      return
-    }
-    if (placing) {
-      if (ITEMS[placing].site && li !== 0) return say('Landscaping goes on the ground level.')
-      const o = originAt(p, placing), sz = itemSize({ type: placing, rot: itemRot })
-      if (commit(placeItem(project, li, { type: placing, rot: itemRot, q: quality, ...o }))) setPulse({ x: o.x + sz.w / 2, y: o.y + sz.h / 2, w: sz.w, h: sz.h, li, ceiling: ITEMS[placing].ceiling, id: Date.now() })
       return
     }
     if (tool === 'remove') {
@@ -218,66 +308,59 @@ export default function Editor({ offer, kit, project: initial, onChange, onSubmi
   const highlights = useMemo(() => {
     if (layer !== 'decorate') return []
     const out = []
-    const selRoom3 = selection?.kind === 'room' ? level.rooms.find(r => r.id === selection.id) : null
-    if (selRoom3) out.push({ ...selRoom3, li })
-    const selIt = selection?.kind === 'item' ? level.items.find(r => r.id === selection.id) : null
-    if (selIt) { const s = itemSize(selIt); out.push({ x: selIt.x, y: selIt.y, w: s.w, h: s.h, li, ceiling: ITEMS[selIt.type].ceiling }) }
+    if (selRoom) out.push({ ...selRoom, li })
+    if (selItem) { const s = itemSize(selItem); out.push({ x: selItem.x, y: selItem.y, w: s.w, h: s.h, li, ceiling: ITEMS[selItem.type].ceiling }) }
     if (hover) {
-      if (placing) {
-        const o = originAt(hover, placing); const s = itemSize({ type: placing, rot: itemRot })
-        out.push({ ...o, w: s.w, h: s.h, li, ceiling: ITEMS[placing].ceiling, bad: !canPlaceItem(project, li, { type: placing, rot: itemRot, ...o }).ok })
-      } else if (tool === 'floor' || tool === 'paint' || tool === 'look') {
+      if (placing3D) {
+        const o = originAt(hover, placing3D); const s = itemSize({ type: placing3D, rot: itemRot })
+        out.push({ ...o, w: s.w, h: s.h, li, ceiling: ITEMS[placing3D].ceiling, bad: !canPlaceItem(project, li, { type: placing3D, rot: itemRot, ...o }).ok })
+      } else if (['floor', 'paint', 'ceiling', 'look'].includes(tool)) {
         const r = roomAt(level, hover.x, hover.y)
-        if (r && r.id !== selRoom3?.id) out.push({ ...r, li, soft: true })
+        if (r && r.id !== selRoom?.id) out.push({ ...r, li, soft: true, ceiling: tool === 'ceiling' })
       }
     }
-    if (flash) { const r = level.rooms.find(r => r.id === flash); if (r) out.push({ ...r, li }) }
+    if (flash) { const r = level.rooms.find(r => r.id === flash); if (r) out.push({ ...r, li, ceiling: tool === 'ceiling' }) }
     return out
-  }, [layer, selection, hover, placing, itemRot, project, li, tool, flash]) // eslint-disable-line
+  }, [layer, selection, hover, placing3D, itemRot, project, li, tool, flash]) // eslint-disable-line
 
-  const selRoom = selection?.kind === 'room' ? level.rooms.find(r => r.id === selection.id) : null
-  const selItem = selection?.kind === 'item' ? level.items.find(r => r.id === selection.id) : null
+  // ---------------------------------------------------------------- palette (bottom tray)
   const budgetPct = Math.round(result.cost.total / offer.budget * 100)
   const twist = offer.twist ? TWISTS[offer.twist] : null
   const done = result.checklist.filter(c => c.ok).length
-  const tools = LAYERS[layer]
   const qualityBar = <QualityPicker value={quality} onChange={setQuality} />
+  const swatchItems = (src, kind) => Object.entries(src).map(([id, m]) => ({ id, kind, ...m }))
 
   let palette
-  if (selRoom && layer === 'design') {
-    palette = <RoomTypeInspector room={selRoom} brief={brief}
-      onType={(type) => commit(updateRoom(project, li, selRoom.id, { type, floor: ROOMS[type].wet && !MATERIALS[selRoom.floor].wetSafe ? 'ceramic' : selRoom.floor }))}
-      onDelete={deleteSelection} onClose={() => setSelection(null)} />
-  } else if (selRoom) {
-    palette = <RoomFinishInspector room={selRoom} kit={kit} styles={offer.styles} say={say} onClose={() => setSelection(null)}
-      onPatch={(patch) => commit(updateRoom(project, li, selRoom.id, patch))} />
-  } else if (selItem) {
+  if (selItem) {
     palette = <ItemInspector item={selItem}
-      onQuality={(v) => commit(moveItem(project, li, selItem.id, { q: v }))}
-      onRotate={() => commit(moveItem(project, li, selItem.id, { rot: (selItem.rot + 1) % 2 }))}
-      onDelete={deleteSelection} onClose={() => setSelection(null)} />
-  } else if (tool === 'room') {
-    palette = <RoomPalette brief={brief} result={result} roomType={roomType} setRoomType={setRoomType} />
-  } else if (tool === 'furnish') {
-    palette = <ItemPalette groups={DESIGN_GROUPS} brief={brief} kit={kit} result={result} value={itemType} onPick={setItemType} say={say}
-      filter={(id) => !isDecorLayer(id)} extra={<>{qualityBar}<RotateBtn rot={itemRot} setRot={setItemRot} /></>} />
-  } else if (tool === 'decor') {
-    palette = <ItemPalette groups={DECOR_GROUPS} brief={brief} kit={kit} result={result} value={decoType} onPick={setDecoType} say={say}
-      filter={(id) => isDecorLayer(id) && !ITEMS[id].ceiling} extra={<>{qualityBar}<RotateBtn rot={itemRot} setRot={setItemRot} /></>} />
-  } else if (tool === 'light') {
-    palette = <ItemPalette groups={['Lighting']} brief={brief} kit={kit} result={result} value={lightType} onPick={setLightType} say={say}
-      filter={(id) => ITEMS[id].ceiling} extra={<>{qualityBar}<RotateBtn rot={itemRot} setRot={setItemRot} /></>}
-      note={<LightingMeter result={result} />} />
+      onQuality={(v) => commit(moveItem(project, li, selItem.id, { q: v }), null, 'select')}
+      onRotate={() => commit(moveItem(project, li, selItem.id, { rot: (selItem.rot + 1) % 2 }), null, 'select')}
+      onDelete={() => { commit(removeItem(project, li, selItem.id), null, 'remove'); setSelection(null) }} onClose={() => setSelection(null)} />
+  } else if (layer === 'decorate' && selRoom) {
+    palette = <RoomFinishInspector room={selRoom} ctx={ctx} styles={offer.styles} say={say} onClose={() => setSelection(null)}
+      onPatch={(patch) => commit(updateRoom(project, li, selRoom.id, patch), null, 'paint')} />
+  } else if (placing) {
+    palette = <div className="palette"><p className="hint">{placing.kind === 'room' ? HINTS.placingRoom : HINTS.placing}</p></div>
   } else if (tool === 'floor') {
-    palette = <SwatchPalette label="FLOOR" items={materialsOfKind('floor')} value={floorMat} kit={kit} styles={offer.styles} say={say} onPick={setFloorMat} extra={qualityBar} hint="Pick a floor and quality, then tap rooms." />
+    palette = <SwatchPalette label="FLOOR" items={materialsOfKind('floor')} value={floorMat} ctx={ctx} styles={offer.styles} say={say} onPick={setFloorMat} extra={qualityBar} hint="Pick a floor and quality, then tap rooms." />
   } else if (tool === 'paint') {
-    palette = <SwatchPalette label="WALLS" items={Object.entries(PAINTS).map(([id, p]) => ({ id, base: true, kind: 'paint', ...p }))} value={paint} kit={kit} styles={offer.styles} say={say} onPick={setPaint} extra={qualityBar} hint="Pick a paint and quality, then tap rooms." />
+    palette = <SwatchPalette label="WALLS" items={swatchItems(PAINTS, 'paint')} value={paint} ctx={ctx} styles={offer.styles} say={say} onPick={setPaint} extra={qualityBar} hint="Pick a paint and quality, then tap rooms." />
+  } else if (tool === 'ceiling') {
+    palette = <SwatchPalette label="CEILING" items={swatchItems(CEILINGS, 'ceiling')} value={ceil} ctx={ctx} styles={offer.styles} say={say} onPick={setCeil} hint="Pick a ceiling finish, then tap rooms. Ceilings are shown while this tool is on." />
   } else if (tool === 'facade') {
-    palette = <SwatchPalette label="FACADE" items={materialsOfKind('facade')} value={project.facade} kit={kit} styles={offer.styles} say={say} hint={HINTS.facade}
-      onPick={(f) => commit({ project: { ...project, facade: f } }, `Facade: ${MATERIALS[f].label}`)} />
+    palette = (
+      <div className="palette">
+        <SwatchRow label="FACADE" items={materialsOfKind('facade')} value={project.facade} ctx={ctx} styles={offer.styles} say={say}
+          onPick={(f) => commit({ project: { ...project, facade: f } }, `Facade: ${MATERIALS[f].label}`, 'paint')} />
+        <SwatchRow label="ENTRANCE" items={swatchItems(DOORS, 'door')} value={project.door || 'standard'} ctx={ctx} styles={offer.styles} say={say}
+          onPick={(d) => commit({ project: { ...project, door: d } }, `Entrances: ${DOORS[d].label}`, 'paint')} />
+      </div>
+    )
   } else {
-    palette = <div className="palette"><p className="hint">{HINTS[tool]}</p></div>
+    palette = <div className="palette"><p className="hint">{HINTS[tool] || ''}</p></div>
   }
+
+  const placingDef = placing?.kind === 'item' ? ITEMS[placing.type] : null
 
   return (
     <div className={`editor layer-${layer} ${briefOpen ? 'brief-open' : ''}`}>
@@ -297,15 +380,15 @@ export default function Editor({ offer, kit, project: initial, onChange, onSubmi
           <button className={`budget-chip ${budgetPct > 100 ? 'over' : ''}`} onClick={() => setBriefOpen(true)}>
             <span className="mono">{money(result.cost.total, true)}</span><span className="bar"><i style={{ width: `${Math.min(100, budgetPct)}%` }} /></span>
           </button>
-          {kit.includes('intern') && <span className="live-score mono" title="Eager Intern estimate">≈{result.overall}</span>}
+          {kit.includes('intern') && <span className="live-score mono" title="Eager intern estimate">≈{result.overall}</span>}
           <button className="icon-btn brief-btn" onClick={() => setBriefOpen(o => !o)} aria-label="Brief"><Icon name="brief" /><span className="badge">{done}/{result.checklist.length}</span></button>
           <button className="primary submit-btn" onClick={() => setConfirm(true)}><Icon name="stamp" size={18} /><span>Submit</span></button>
         </div>
       </header>
 
       <nav className="ed-tools">
-        {tools.map(t => (
-          <button key={t.id} className={`tool ${tool === t.id ? 'on' : ''}`} onClick={() => pickTool(t.id)}>
+        {LAYERS[layer].map(t => (
+          <button key={t.id} className={`tool ${tool === t.id ? 'on' : ''}`} onClick={() => pickTool(t)}>
             <Icon name={t.icon} size={22} /><span>{t.label}</span>
           </button>
         ))}
@@ -313,32 +396,49 @@ export default function Editor({ offer, kit, project: initial, onChange, onSubmi
 
       <main className="ed-canvas">
         {layer === 'design' ? (
-          <PlanView project={project} li={li} tool={tool} itemType={itemType} itemRot={itemRot} selection={selection} flash={flash}
+          <PlanView project={project} li={li} tool={moving || merging ? 'select' : planTool} itemType={itemType} itemRot={itemRot} selection={selection} flash={flash}
             validateRect={(r) => canPlaceRoom(project, li, r)} validateItem={(it) => canPlaceItem(project, li, it)}
-            onTap={handleTap} onRect={handleRect} onStroke={handleStroke} onItemDrop={handleDrop} onMoveItem={handleMove} />
+            onTap={handleTap} onRect={handleRect} onStroke={handleStroke} onItemDrop={handleDrop} onMoveItem={handleMove}
+            moving={moving ? { ...moving, ok: !moveCheck?.error || (!moving.dx && !moving.dy) } : null} onMoveDrag={(dx, dy) => setMoving(m => m && (m.dx !== dx || m.dy !== dy) ? { ...m, dx, dy } : m)}
+            mergeIds={merging?.ids} bubble={bubble} />
         ) : (
-          <View3D project={project} cutLevel={showAll ? null : li} night={night} pickLevel={li}
-            onTap={tap3D} onHover={setHover} highlights={highlights} pulse={pulse} focusLevel={li} />
+          <View3D project={project} cutLevel={wholeBuilding ? null : li} night={night} pickLevel={li}
+            onTap={tap3D} onHover={setHover} highlights={highlights} pulse={pulse} focusLevel={li} showCeilings={tool === 'ceiling'} />
         )}
 
         <div className="levels">
           {[...project.levels.keys()].reverse().map(i => (
-            <button key={i} className={`lvl ${i === li ? 'on' : ''}`} onClick={() => { setLi(i); setSelection(null) }}>L{i + 1}</button>
+            <button key={i} className={`lvl ${i === li ? 'on' : ''}`} onClick={() => { setLi(i); clearModes() }}>L{i + 1}</button>
           ))}
           {brief.levels.max > 1 && layer === 'design' && <button className="lvl add" onClick={() => setLevelMenu(m => !m)} aria-label="Levels"><Icon name="layers" size={16} /></button>}
           {levelMenu && layer === 'design' && (
             <div className="level-menu">
-              <button onClick={() => { const r = addLevel(project, brief.levels.max); if (commit(r)) setLi(project.levels.length); setLevelMenu(false) }}><Icon name="plus" size={16} />Add empty level</button>
-              <button onClick={() => { const r = duplicateLevel(project, project.levels.length - 1, brief.levels.max); if (commit(r)) setLi(project.levels.length); setLevelMenu(false) }}><Icon name="copy" size={16} />Duplicate top level</button>
-              <button disabled={project.levels.length <= 1} onClick={() => { commit(removeTopLevel(project)); setLevelMenu(false) }}><Icon name="trash" size={16} />Remove top level</button>
-              <p className="mono dim">{brief.levels.min === brief.levels.max ? `${brief.levels.min} level` : `${brief.levels.min}–${brief.levels.max} levels`}</p>
+              <button onClick={() => { const r = addLevel(project, brief.levels.max); if (commit(r, null, 'room')) setLi(project.levels.length); setLevelMenu(false) }}><Icon name="plus" size={16} />Add empty level</button>
+              <button onClick={() => { const r = duplicateLevel(project, project.levels.length - 1, brief.levels.max); if (commit(r, null, 'room')) setLi(project.levels.length); setLevelMenu(false) }}><Icon name="copy" size={16} />Duplicate top level</button>
+              <button disabled={project.levels.length <= 1} onClick={() => { commit(removeTopLevel(project), null, 'remove'); setLevelMenu(false) }}><Icon name="trash" size={16} />Remove top level</button>
+              <p className="mono dim">{brief.levels.min === brief.levels.max ? `${brief.levels.min} level${brief.levels.min > 1 ? 's' : ''}` : `${brief.levels.min}–${brief.levels.max} levels`}</p>
             </div>
           )}
         </div>
 
-        {layer === 'decorate' && (
+        {placing && (
+          <div className="placing-bar" role="status">
+            <button className="placing-what" onClick={() => setCatalog(placing.kind === 'room' ? 'room' : tool)} aria-label="Change item">
+              {placing.kind === 'room'
+                ? <i className="sw lg" style={{ background: ROOMS[placing.type].color }} />
+                : <svg viewBox={`-0.2 -0.2 ${placingDef.w + 0.4} ${placingDef.h + 0.4}`} className="item-ico"><ItemSymbol type={placing.type} w={placingDef.w} h={placingDef.h} /></svg>}
+              <span><em className="mono">PLACING</em><b>{placing.kind === 'room' ? ROOMS[placing.type].label : placingDef.label}</b></span>
+              <Icon name="chevron" size={14} />
+            </button>
+            {placing.kind === 'item' && <QualityPicker value={quality} onChange={setQuality} compact />}
+            {placing.kind === 'item' && placingDef.w !== placingDef.h && <button className="chip rot" onClick={() => setItemRot(r => (r + 1) % 2)} aria-label="Rotate"><Icon name="rotate" size={16} /></button>}
+            <button className="stop-x" onClick={stopPlacing} aria-label="Stop placing"><Icon name="x" size={20} stroke={2.6} /></button>
+          </div>
+        )}
+
+        {layer === 'decorate' && !placing && (
           <div className="view3d-hud">
-            <button className={`chip ${showAll ? '' : 'on'}`} onClick={() => setShowAll(v => !v)}><Icon name="section" size={16} />{showAll ? 'Whole building' : `Cut at L${li + 1}`}</button>
+            <button className={`chip ${wholeBuilding ? '' : 'on'}`} onClick={() => setWholeBuilding(v => !v)}><Icon name="section" size={16} />{wholeBuilding ? 'Whole building' : `Cut at L${li + 1}`}</button>
             <button className={`chip ${night ? 'on' : ''}`} onClick={() => setNight(n => !n)}><Icon name={night ? 'moon' : 'sun'} size={16} />{night ? 'Night' : 'Day'}</button>
           </div>
         )}
@@ -346,8 +446,8 @@ export default function Editor({ offer, kit, project: initial, onChange, onSubmi
         {layer === 'design' && (
           <div className="title-block mono">
             <div><b>{brief.name.toUpperCase()}</b></div>
-            <div>CLIENT {offer.client.toUpperCase()}</div>
-            <div>LEVEL {li + 1}/{project.levels.length} · SCALE 1:100 · {result.stats.area} m² GFA</div>
+            <div>CLIENT {offer.client.toUpperCase()} · LEVEL {brief.level}/10</div>
+            <div>FLOOR {li + 1}/{project.levels.length} · SCALE 1:100 · {result.stats.area} m² GFA</div>
           </div>
         )}
 
@@ -361,11 +461,29 @@ export default function Editor({ offer, kit, project: initial, onChange, onSubmi
       </aside>
       {briefOpen && <div className="scrim" onClick={() => setBriefOpen(false)} />}
 
+      {catalog && (
+        <CatalogSheet kind={catalog} brief={brief} ctx={ctx} result={result} showAll={showAll} setShowAll={setShowAll}
+          onPick={pickFromCatalog} onClose={() => { setCatalog(null); if (!placing) setTool(layer === 'design' ? 'select' : 'look') }} say={say} />
+      )}
+
+      {confirmErase && (
+        <div className="modal-wrap" onClick={() => setConfirmErase(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()} role="alertdialog" aria-label="Remove room">
+            <h3>Are you sure you want to remove the room?</h3>
+            <p className="dim">The {ROOMS[level.rooms.find(r => r.id === confirmErase)?.type]?.label.toLowerCase() || 'room'} and everything inside it (furniture, decor, lights, doors and windows in its walls) will be removed. You can undo this.</p>
+            <div className="row end">
+              <button className="ghost" onClick={() => setConfirmErase(null)} autoFocus>Keep it</button>
+              <button className="primary danger" onClick={() => { commit(removeRoom(project, li, confirmErase), null, 'remove'); setConfirmErase(null); setSelection(null) }}><Icon name="trash" size={18} />Remove room</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {confirm && (
         <div className="modal-wrap" onClick={() => setConfirm(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <h3>Submit for review?</h3>
-            <p className="dim">The client, a planner, a critic and an accountant will walk through your building. You can't edit after submitting.</p>
+            <p className="dim">The client, a planner, a critic and an accountant will walk through your building. F fails the project: you can retry, at the cost of a strike.</p>
             <ul className="mini-check">
               {result.checklist.filter(c => !c.ok).slice(0, 6).map((c, i) => <li key={i}><Icon name="x" size={14} />{c.label} <span className="mono dim">{c.detail}</span></li>)}
               {result.checklist.every(c => c.ok) && <li className="ok"><Icon name="check" size={14} />Every requirement is met.</li>}
@@ -381,131 +499,135 @@ export default function Editor({ offer, kit, project: initial, onChange, onSubmi
   )
 }
 
-// ---------------------------------------------------------------- palette pieces
-export function QualityPicker({ value, onChange }) {
-  return (
-    <div className="quality" role="radiogroup" aria-label="Quality">
-      {QUALITY.map(qq => (
-        <button key={qq.id} className={`q-${qq.id} ${value === qq.id ? 'on' : ''}`} onClick={() => onChange(qq.id)} role="radio" aria-checked={value === qq.id}>
-          <span>{qq.label}</span><em className="mono">×{qq.cost}</em>
-        </button>
-      ))}
-    </div>
-  )
-}
+// ---------------------------------------------------------------- catalog
+const UNLOCK_LABEL = { B: 'B unlock', A: 'A unlock', S: 'S unlock' }
 
-function RotateBtn({ rot, setRot }) {
-  return <button className="chip rot" onClick={() => setRot(r => (r + 1) % 2)}><Icon name="rotate" size={16} />{rot ? '90°' : '0°'}</button>
-}
-
-function RoomPalette({ brief, result, roomType, setRoomType }) {
-  const [more, setMore] = useState(false)
+function CatalogSheet({ kind, brief, ctx, result, showAll, setShowAll, onPick, onClose, say }) {
+  const title = { room: 'Rooms', furnish: 'Furniture & equipment', decor: 'Decor & landscape', light: 'Ceiling lighting' }[kind]
   const program = [...new Set(brief.rooms.map(r => r.type))]
-  const extra = Object.keys(ROOMS).filter(t => !program.includes(t))
-  const ok = (t) => result.checklist.filter(c => c.kind === 'room' && c.type === t).every(c => c.ok)
+  let sections
+  if (kind === 'room') {
+    const basics = Object.keys(ROOMS).filter(t => !program.includes(t) && ROOMS[t].basic)
+    const others = Object.keys(ROOMS).filter(t => !program.includes(t) && !ROOMS[t].basic)
+    sections = [['In the brief', program], ['Support spaces', basics], ...(showAll ? [['Other room types', others]] : [])]
+      .map(([name, ids]) => [name, ids.map(id => ({ id, room: true }))])
+  } else {
+    const pool = Object.keys(ITEMS).filter(id => kind === 'furnish' ? !isDecorLayer(id) : kind === 'light' ? ITEMS[id].ceiling : isDecorLayer(id) && !ITEMS[id].ceiling)
+    const shown = pool.filter(id => showAll || relevantItem(id, brief))
+    const required = shown.filter(id => brief.items.some(r => r.type === id || (r.family && familyOf(id) === r.family)))
+    const rest = shown.filter(id => !required.includes(id))
+    const groups = {}
+    for (const id of rest) (groups[ITEMS[id].group] ||= []).push(id)
+    sections = [['Required by the brief', required], ...Object.entries(groups)].filter(([, ids]) => ids.length).map(([name, ids]) => [name, ids.map(id => ({ id }))])
+  }
+  const roomStatus = (t) => result.checklist.filter(c => c.kind === 'room' && c.type === t)
+  const itemStatus = (id) => result.checklist.find(c => c.kind === 'item' && c.type === id) || result.checklist.find(c => c.kind === 'item' && c.family && c.family === familyOf(id))
   return (
-    <div className="palette">
-      <p className="hint">{HINTS.room}</p>
-      <div className="chips">
-        {program.map(t => (
-          <button key={t} className={`chip room-chip ${roomType === t ? 'on' : ''}`} onClick={() => setRoomType(t)}>
-            <i className="sw" style={{ background: ROOMS[t].color }} />{ROOMS[t].label}{ok(t) && <Icon name="check" size={14} className="ok" />}
-          </button>
-        ))}
-        <button className={`chip ${more ? 'on' : ''}`} onClick={() => setMore(m => !m)}>{more ? 'Less' : 'More rooms…'}</button>
-        {more && extra.map(t => <button key={t} className={`chip room-chip ${roomType === t ? 'on' : ''}`} onClick={() => setRoomType(t)}><i className="sw" style={{ background: ROOMS[t].color }} />{ROOMS[t].label}</button>)}
-      </div>
-    </div>
-  )
-}
-
-function ItemPalette({ groups, brief, kit, result, value, onPick, say, filter, extra, note }) {
-  const [tab, setTab] = useState(groups[0])
-  const required = [...new Set(brief.items.map(i => i.type))]
-  const list = (tab === 'Brief' ? required : Object.keys(ITEMS).filter(id => ITEMS[id].group === tab)).filter(filter)
-  const itemStatus = (t) => result.checklist.find(c => c.kind === 'item' && c.type === t)
-  return (
-    <div className="palette">
-      <div className="tabs">
-        {groups.length > 1 && groups.map(g => <button key={g} className={tab === g ? 'on' : ''} onClick={() => setTab(g)}>{g}</button>)}
-        <div className="tabs-extra">{extra}</div>
-      </div>
-      {note}
-      <div className="chips items">
-        {list.map(id => {
-          const def = ITEMS[id]
-          const locked = !unlockedItem(id, kit)
-          const st = itemStatus(id)
-          const s = itemSize({ type: id, rot: 0 })
-          return (
-            <button key={id} className={`item-chip ${value === id ? 'on' : ''} ${locked ? 'locked' : ''}`}
-              onClick={() => locked ? say(`Unlock with the “${CARDS[def.card].name}” card.`) : onPick(id)}>
-              <svg viewBox={`-0.2 -0.2 ${s.w + 0.4} ${s.h + 0.4}`} className="item-ico"><ItemSymbol type={id} w={s.w} h={s.h} /></svg>
-              <span>{def.label}</span>
-              {st ? <em className={st.ok ? 'ok' : ''}>{st.detail}</em> : <em className="price">{money(def.cost, true)}</em>}
-              {locked && <Icon name="lock" size={14} className="lock" />}
-            </button>
-          )
-        })}
-        {!list.length && <p className="hint">Nothing here yet. Special pieces come from cards you collect.</p>}
-      </div>
-    </div>
-  )
-}
-
-function SwatchPalette({ label, items, value, kit, styles, say, onPick, extra, hint }) {
-  return (
-    <div className="palette">
-      <div className="tabs"><span className="hint grow">{hint}</span><div className="tabs-extra">{extra}</div></div>
-      <div className="swatch-row"><span className="mono label">{label}</span>
-        <div className="chips">
-          {items.map(m => {
-            const locked = m.kind !== 'paint' && !unlockedMaterial(m.id, kit)
-            const match = m.tags.some(t => styles.includes(t))
-            return (
-              <button key={m.id} className={`swatch ${value === m.id ? 'on' : ''} ${locked ? 'locked' : ''} ${match ? 'match' : ''}`}
-                onClick={() => locked ? say(`Unlock with the “${CARDS[m.card].name}” card.`) : onPick(m.id)}>
-                <i style={{ background: m.color }} />
-                <span>{m.label}</span>
-                <em className="mono">{m.tags.map(t => STYLES[t]).join(' · ') || 'neutral'}{m.wetSafe && m.kind === 'floor' ? ' · wet ✓' : ''}</em>
-                {locked && <Icon name="lock" size={14} className="lock" />}
-                {match && <b className="match-dot" title="Matches client taste">★</b>}
-              </button>
-            )
-          })}
+    <div className="sheet-wrap" onClick={onClose}>
+      <div className="sheet" onClick={e => e.stopPropagation()} role="dialog" aria-label={title}>
+        <div className="sheet-head">
+          <h3>{title}</h3>
+          <div className="seg filter-seg">
+            <button className={!showAll ? 'on' : ''} onClick={() => setShowAll(false)}>This project</button>
+            <button className={showAll ? 'on' : ''} onClick={() => setShowAll(true)}>All</button>
+          </div>
+          <button className="icon-btn" onClick={onClose} aria-label="Close catalog"><Icon name="x" /></button>
+        </div>
+        <div className="sheet-body">
+          {sections.map(([name, list]) => (
+            <section key={name}>
+              <span className="mono dim">{name.toUpperCase()}</span>
+              <div className="cat-grid">
+                {list.map(({ id, room }) => {
+                  if (room) {
+                    const st = roomStatus(id)
+                    const ok = st.length && st.every(c => c.ok)
+                    return (
+                      <button key={id} className="cat-card" onClick={() => onPick('room', id)}>
+                        <span className="cat-art"><i className="room-swatch" style={{ background: ROOMS[id].color }} /></span>
+                        <b>{ROOMS[id].label}</b>
+                        <em className="mono">{st.length ? st.map(c => c.detail).join(' · ') : ROOMS[id].wet ? 'wet room' : ' '}</em>
+                        {ok ? <span className="cat-ok"><Icon name="check" size={12} stroke={3} /></span> : null}
+                      </button>
+                    )
+                  }
+                  const def = ITEMS[id]
+                  const open = available(def, id, ctx)
+                  const st = itemStatus(id)
+                  return (
+                    <button key={id} className={`cat-card ${open ? '' : 'locked'}`} onClick={() => open ? onPick('item', id) : say(lockReason(def))}>
+                      <span className="cat-art"><svg viewBox={`-0.3 -0.3 ${def.w + 0.6} ${def.h + 0.6}`} className="item-ico"><ItemSymbol type={id} w={def.w} h={def.h} /></svg></span>
+                      <b>{def.label}</b>
+                      <em className="mono">{money(def.cost, true)} · {def.w}×{def.h} m{def.boost ? ` · +${(def.boost.f || 0) + (def.boost.a || 0)}` : ''}</em>
+                      {st && open && <span className={`cat-req ${st.ok ? 'ok' : ''}`}>{st.detail}</span>}
+                      {!open && <span className={`cat-lock ${def.pack ? 'pack' : `g-${def.unlock}`}`}><Icon name="lock" size={11} />{def.pack ? 'Pack' : UNLOCK_LABEL[def.unlock]}</span>}
+                    </button>
+                  )
+                })}
+              </div>
+            </section>
+          ))}
+          {!showAll && <button className="ghost show-all" onClick={() => setShowAll(true)}>Show everything, including other industries</button>}
         </div>
       </div>
     </div>
   )
 }
 
-function LightingMeter({ result }) {
-  const c = result.checklist.find(c => c.kind === 'light')
-  const v = parseInt(c?.detail) || 0
-  return <div className="light-meter"><span className="mono dim">LIGHT LEVEL</span><div className="bar"><i style={{ width: `${v}%` }} className={v < 60 ? 'bad' : v < 90 ? 'mid' : ''} /></div><b className="mono">{v}%</b></div>
-}
-
-function RoomTypeInspector({ room, brief, onType, onDelete, onClose }) {
-  const program = [...new Set(brief.rooms.map(r => r.type))]
-  const types = [...program, ...Object.keys(ROOMS).filter(t => !program.includes(t))]
+// ---------------------------------------------------------------- palette pieces
+export function QualityPicker({ value, onChange, compact }) {
   return (
-    <div className="palette inspector">
-      <div className="insp-head">
-        <i className="sw" style={{ background: ROOMS[room.type].color }} />
-        <strong>{ROOMS[room.type].label}</strong>
-        <span className="mono dim">{room.w} × {room.h} m · {roomArea(room)} m²</span>
-        <button className="icon-btn danger" onClick={onDelete} aria-label="Delete room"><Icon name="trash" size={18} /></button>
-        <button className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="x" size={18} /></button>
-      </div>
-      <div className="chips">
-        {types.map(t => <button key={t} className={`chip room-chip ${room.type === t ? 'on' : ''}`} onClick={() => onType(t)}><i className="sw" style={{ background: ROOMS[t].color }} />{ROOMS[t].label}</button>)}
-      </div>
-      <p className="hint">Floors, paint and lights are chosen in Decorate 3D.</p>
+    <div className={`quality ${compact ? 'compact' : ''}`} role="radiogroup" aria-label="Quality">
+      {QUALITY.map(qq => (
+        <button key={qq.id} className={`q-${qq.id} ${value === qq.id ? 'on' : ''}`} onClick={() => { feedback('tap'); onChange(qq.id) }} role="radio" aria-checked={value === qq.id}>
+          <span>{compact ? qq.label[0] : qq.label}</span>{!compact && <em className="mono">×{qq.cost}</em>}
+        </button>
+      ))}
     </div>
   )
 }
 
-function RoomFinishInspector({ room, kit, styles, say, onPatch, onClose }) {
+function SwatchRow({ label, items, value, ctx, styles, say, onPick }) {
+  return (
+    <div className="swatch-row"><span className="mono label">{label}</span>
+      <div className="chips">
+        {items.map(m => {
+          const open = available(m, m.id, ctx)
+          const match = m.tags.some(t => styles.includes(t))
+          return (
+            <button key={m.id} className={`swatch ${value === m.id ? 'on' : ''} ${open ? '' : 'locked'} ${match ? 'match' : ''}`}
+              onClick={() => open ? onPick(m.id) : say(lockReason(m))}>
+              <i style={{ background: m.color }} />
+              <span>{m.label}</span>
+              <em className="mono">{m.tags.map(t => STYLES[t]).join(' · ') || 'neutral'}{m.wetSafe && m.kind === 'floor' ? ' · wet ✓' : ''}</em>
+              {!open && <Icon name="lock" size={14} className="lock" />}
+              {match && <b className="match-dot" title="Matches client taste">★</b>}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function SwatchPalette({ label, items, value, ctx, styles, say, onPick, extra, hint }) {
+  return (
+    <div className="palette">
+      <div className="tabs"><span className="hint grow">{hint}</span><div className="tabs-extra">{extra}</div></div>
+      <SwatchRow label={label} items={items} value={value} ctx={ctx} styles={styles} say={say} onPick={onPick} />
+    </div>
+  )
+}
+
+function RoomFinishInspector({ room, ctx, styles, say, onPatch, onClose }) {
+  const chips = (src, field, extra) => Object.entries(src).map(([id, m]) => {
+    const open = available(m, id, ctx)
+    return <button key={id} className={`chip ${room[field] === id ? 'on' : ''} ${open ? '' : 'locked'}`}
+      onClick={() => { if (!open) say(lockReason(m)); else if (extra) extra(id, m); else onPatch({ [field]: id }) }}>
+      <i className="sw" style={{ background: m.color }} />{m.label}{m.tags.some(t => styles.includes(t)) && <b className="star">★</b>}{!open && <Icon name="lock" size={12} />}
+    </button>
+  })
+  const floors = Object.fromEntries(materialsOfKind('floor').map(m => [m.id, m]))
   return (
     <div className="palette inspector">
       <div className="insp-head">
@@ -515,26 +637,14 @@ function RoomFinishInspector({ room, kit, styles, say, onPatch, onClose }) {
         <button className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="x" size={18} /></button>
       </div>
       <div className="swatch-row"><span className="mono label">FLOOR</span>
-        <div className="chips">
-          <QualityPicker value={room.floorQ ?? 1} onChange={(v) => onPatch({ floorQ: v })} />
-          {materialsOfKind('floor').map(m => {
-            const locked = !unlockedMaterial(m.id, kit)
-            return <button key={m.id} className={`chip ${room.floor === m.id ? 'on' : ''} ${locked ? 'locked' : ''}`}
-              onClick={() => locked ? say(`Unlock with the “${CARDS[m.card].name}” card.`) : ROOMS[room.type].wet && !m.wetSafe ? say(`${m.label} isn't water-safe.`, 'error') : onPatch({ floor: m.id })}>
-              <i className="sw" style={{ background: m.color }} />{m.label}{m.tags.some(t => styles.includes(t)) && <b className="star">★</b>}{locked && <Icon name="lock" size={12} />}
-            </button>
-          })}
-        </div>
+        <div className="chips"><QualityPicker value={room.floorQ ?? 1} onChange={(v) => onPatch({ floorQ: v })} compact />
+          {chips(floors, 'floor', (id, m) => ROOMS[room.type].wet && !m.wetSafe ? say(`${m.label} isn't water-safe.`, 'error') : onPatch({ floor: id }))}</div>
       </div>
       <div className="swatch-row"><span className="mono label">WALLS</span>
-        <div className="chips">
-          <QualityPicker value={room.wallQ ?? 1} onChange={(v) => onPatch({ wallQ: v })} />
-          {Object.entries(PAINTS).map(([id, p]) => (
-            <button key={id} className={`chip ${room.wall === id ? 'on' : ''}`} onClick={() => onPatch({ wall: id })}>
-              <i className="sw" style={{ background: p.color }} />{p.label}{p.tags.some(t => styles.includes(t)) && <b className="star">★</b>}
-            </button>
-          ))}
-        </div>
+        <div className="chips"><QualityPicker value={room.wallQ ?? 1} onChange={(v) => onPatch({ wallQ: v })} compact />{chips(PAINTS, 'wall')}</div>
+      </div>
+      <div className="swatch-row"><span className="mono label">CEILING</span>
+        <div className="chips">{chips(CEILINGS, 'ceiling')}</div>
       </div>
     </div>
   )
@@ -568,7 +678,7 @@ function BriefPanel({ offer, brief, result, twist, kit, onClose }) {
     <div className="brief-panel">
       <div className="bp-head">
         <div>
-          <span className="mono dim">BRIEF · TIER {brief.tier}</span>
+          <span className="mono dim">BRIEF · LEVEL {brief.level}/10</span>
           <h3>{brief.name}</h3>
           <p className="dim small">{offer.client}</p>
         </div>
@@ -589,7 +699,7 @@ function BriefPanel({ offer, brief, result, twist, kit, onClose }) {
       {kit.includes('intern') && (
         <div className="intern">
           <span className="mono dim">INTERN'S ESTIMATE</span>
-          <div className="row wrap"><span>Function <b>{result.functionality}</b></span><span>Brief <b>{result.requirements}</b></span><span>Looks <b>{result.aesthetics}</b></span><span>Budget <b>{result.budget}</b></span></div>
+          <div className="row wrap"><span>Function <b>{result.functionality}</b></span><span>Brief <b>{result.requirements}</b></span><span>Looks <b>{result.aesthetics}</b></span><span>Budget <b>{result.budget}</b></span><span>Grade <b>{result.grade}</b></span></div>
         </div>
       )}
       {groups.map(([name, items]) => items.length > 0 && (
@@ -600,7 +710,9 @@ function BriefPanel({ offer, brief, result, twist, kit, onClose }) {
           </ul>
         </div>
       ))}
-      <p className="dim small">Four ratings, averaged: <b>Functionality</b> (circulation, access, adjacency, lighting, equipment quality), <b>Requirements</b> (program, equipment, levels), <b>Aesthetics</b> (daylight, style, palette, finish quality, lighting mood, landscape, facade, massing) and <b>Budget</b>. Premium pieces lift the first and third and cost you the fourth.</p>
+      <p className="dim small">Graded <b>F · C · B · A · S</b> on the average of Functionality, Requirements, Aesthetics and Budget. F fails. B, A and S unlock better {INDUSTRIES[brief.industry].label.toLowerCase()} pieces for every future architect.</p>
     </div>
   )
 }
+
+export { FAMILIES }

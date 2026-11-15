@@ -1,6 +1,6 @@
 // Review engine: scores a project on Functionality, Requirements and Aesthetics.
-import { ITEMS, MATERIALS, PAINTS, ROOMS, STYLES, q } from '../game/catalog.js'
-import { BRIEFS, TWISTS } from '../game/briefs.js'
+import { CEILINGS, DOORS, ITEMS, MATERIALS, PAINTS, ROOMS, STYLES, familyOf, q } from '../game/catalog.js'
+import { BRIEFS, GRADES, TWISTS, gradeFor, reqLabel } from '../game/briefs.js'
 import { cellOwners, ck, edgeCells, footprint, itemCells, projectCost, roomArea, verticalLinks, wallEdges } from './plan.js'
 
 const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v))
@@ -227,6 +227,16 @@ export function evaluate(project, offer, kit = []) {
 
   let functionality = 100 * (0.25 * reach + 0.17 * access + 0.12 * distScore + (brief.adj.length ? 0.18 : 0) * adj + 0.05 * crowd + 0.05 * wet + 0.05 * lift + 0.07 * lighting + 0.06 * equipQ)
   functionality /= (brief.adj.length ? 1 : 0.82)
+  // Signature pieces: each distinct boosted item type adds once (unlocks are meant to feel good).
+  const boostTypes = new Set(items.map(it => it.type).filter(t => ITEMS[t].boost))
+  let boostF = [...boostTypes].reduce((s, t) => s + (ITEMS[t].boost.f || 0), 0)
+  let boostA = [...boostTypes].reduce((s, t) => s + (ITEMS[t].boost.a || 0), 0)
+  const door = DOORS[project.door] || DOORS.standard
+  boostF += door.boost?.f || 0; boostA += door.boost?.a || 0
+  boostF += Math.min(2, rooms.reduce((s, r) => s + (CEILINGS[r.ceiling]?.boost?.f || 0), 0))
+  boostF = Math.min(10, boostF); boostA = Math.min(12, boostA)
+  functionality += boostF
+  if (boostF) notes.push({ group: 'functionality', label: 'Smart pieces', value: 1, text: `Specialist equipment makes the place work better (+${boostF}).` })
   if (!hasEntrance) functionality = Math.min(functionality, 12)
   if (kit.includes('mentor')) functionality += 5
 
@@ -249,8 +259,9 @@ export function evaluate(project, offer, kit = []) {
 
   const itemScores = brief.items.map(req => {
     const n = req.count || 1
-    const have = items.filter(it => it.type === req.type && (!req.in || itemRoomType(project, it) === req.in)).length
-    checklist.push({ label: `${ITEMS[req.type].label}${n > 1 ? ` ×${n}` : ''}${req.in ? ` in ${ROOMS[req.in].label}` : ''}`, ok: have >= n, detail: `${Math.min(have, n)}/${n}`, kind: 'item', type: req.type })
+    const match = (it) => req.family ? familyOf(it.type) === req.family : it.type === req.type
+    const have = items.filter(it => match(it) && (!req.in || itemRoomType(project, it) === req.in)).length
+    checklist.push({ label: `${reqLabel(req)}${n > 1 ? ` ×${n}` : ''}${req.in ? ` in ${ROOMS[req.in].label}` : ''}`, ok: have >= n, detail: `${Math.min(have, n)}/${n}`, kind: 'item', type: req.type, family: req.family })
     return clamp(have / n)
   })
   const itemScore = avg(itemScores)
@@ -308,7 +319,9 @@ export function evaluate(project, offer, kit = []) {
   const matches = (id) => (MATERIALS[id]?.tags || []).some(t => offer.styles.includes(t))
   const floorMatch = totalArea ? [...floorArea].reduce((s, [id, a]) => s + (matches(id) ? a : 0), 0) / totalArea : 0
   const paintMatch = totalArea ? rooms.reduce((s, r) => s + ((PAINTS[r.wall]?.tags || []).some(t => offer.styles.includes(t)) ? roomArea(r) : 0), 0) / totalArea : 0
-  const style = rooms.length ? 0.3 * (matches(project.facade) ? 1 : 0) + 0.45 * floorMatch + 0.25 * paintMatch : 0
+  const ceilMatch = totalArea ? rooms.reduce((s, r) => s + ((CEILINGS[r.ceiling || 'plain']?.tags || []).some(t => offer.styles.includes(t)) ? roomArea(r) : 0), 0) / totalArea : 0
+  const doorMatch = door.tags.some(t => offer.styles.includes(t)) ? 1 : 0
+  const style = rooms.length ? 0.25 * (matches(project.facade) ? 1 : 0) + 0.37 * floorMatch + 0.2 * paintMatch + 0.12 * ceilMatch + 0.06 * doorMatch : 0
   note('aesthetics', 'Style fit', style, `Materials nail the ${offer.styles.map(s => STYLES[s].toLowerCase()).join(' / ')} brief.`, `The client wanted something ${offer.styles.map(s => STYLES[s].toLowerCase()).join(' and ')}. Materials missed it.`)
 
   const distinct = new Set([project.facade, ...floorArea.keys()]).size
@@ -335,9 +348,7 @@ export function evaluate(project, offer, kit = []) {
   }
   note('aesthetics', 'Massing', compact, 'A clear, legible building form.', 'The footprint is fragmented and hard to read.')
 
-  const specials = new Map()
-  items.forEach(it => { const s = ITEMS[it.type].special; if (s) specials.set(it.type, Math.min(2, (specials.get(it.type) || 0) + 1)) })
-  const specialBonus = Math.min(15, [...specials].reduce((s, [t, n]) => s + ITEMS[t].special * (n === 1 ? 1 : 1.4), 0))
+  const specialBonus = boostA
   if (specialBonus) notes.push({ group: 'aesthetics', label: 'Signature pieces', value: 1, text: `Signature pieces add flair (+${Math.round(specialBonus)}).` })
 
   const roomQ = totalArea ? rooms.reduce((s, r) => s + (q(r.floorQ).score + q(r.wallQ).score) / 2 * roomArea(r), 0) / totalArea : 0
@@ -361,13 +372,13 @@ export function evaluate(project, offer, kit = []) {
 
   return {
     functionality, requirements, aesthetics, budget, overall,
-    stars: starsFor(overall), cost, notes, checklist,
+    grade: gradeFor(overall).id, stars: starsFor(overall), cost, notes, checklist,
     stats: { area: totalArea, levels: L, walk: Number(walk.toFixed(1)), daylit: hab.filter(r => lit.has(r.id)).length, habitable: hab.length },
   }
 }
 
 export function starsFor(score) {
-  return score >= 90 ? 5 : score >= 78 ? 4 : score >= 64 ? 3 : score >= 50 ? 2 : 1
+  return { S: 5, A: 4, B: 3, C: 2, F: 1 }[gradeFor(score).id]
 }
 
 export const STAR_LABEL = ['', 'Disaster', 'Disappointing', 'Solid work', 'Excellent', 'Masterpiece']

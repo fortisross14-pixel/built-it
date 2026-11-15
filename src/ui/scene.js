@@ -3,7 +3,7 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
-import { ITEMS, LEVEL_HEIGHT, MATERIALS, PAINTS, itemSize } from '../game/catalog.js'
+import { CEILINGS, DOORS, ITEMS, LEVEL_HEIGHT, MATERIALS, PAINTS, itemSize } from '../game/catalog.js'
 import { cellOwners, ck, wallEdges } from '../engine/plan.js'
 
 const WALL_T = 0.2
@@ -110,10 +110,17 @@ function furniture(b, type, x, z, w, d, y0, quality = 1) {
       b.box(mat('#78a6b8'), cx, y0 + 0.55, cz, w - 0.3, 0.2, d - 0.3); b.box(steel, cx, y0 + 0.25, cz, 0.2, 0.5, 0.2); break
     case 'shelving': case 'lockers':
       b.box(type === 'shelving' ? wood : mat('#6c8e86'), cx, y0 + 1, cz, w - 0.1, 2, d - 0.55); break
-    case 'rack':
-      b.box(steel, cx, y0 + 1.5, cz, w - 0.2, 0.05, 0.05)
-      for (let i = 0; i < 5; i++) b.box(mat(['#c96f53', '#e2c290', '#4f6d7a', '#9a8fb8', '#e8e3da'][i]), x + 0.25 + i * (w - 0.5) / 4, y0 + 1.05, cz, 0.14, 0.85, 0.5)
+    case 'rack': case 'rackWomen': case 'rackMen': case 'rackKids': {
+      const pal = { rackWomen: ['#d9849a', '#f0c9a8', '#b46a8f', '#f3e1e6', '#9c4e63'], rackMen: ['#3f566e', '#7d8b99', '#24313d', '#b8a98f', '#5d6b52'], rackKids: ['#f2c14e', '#7cc4e8', '#f28a6b', '#9bd18b', '#c9a5e8'] }[type] || ['#c96f53', '#e2c290', '#4f6d7a', '#9a8fb8', '#e8e3da']
+      const along = w >= d, L = Math.max(w, d), hang = type === 'rackKids' ? 0.65 : 0.85
+      if (along) b.box(steel, cx, y0 + 1.5, cz, w - 0.2, 0.05, 0.05); else b.box(steel, cx, y0 + 1.5, cz, 0.05, 0.05, d - 0.2)
+      for (let i = 0; i < 6; i++) {
+        const t = 0.2 + i * (L - 0.4) / 5
+        if (along) b.box(mat(pal[i % 5]), x + t, y0 + 1.45 - hang / 2, cz, 0.12, hang, 0.5)
+        else b.box(mat(pal[i % 5]), cx, y0 + 1.45 - hang / 2, z + t, 0.5, hang, 0.12)
+      }
       break
+    }
     case 'display':
       b.box(white, cx, y0 + 0.45, cz, w - 0.15, 0.9, d - 0.3)
       b.box(mat('#cfe3ea', { transparent: true, opacity: 0.45 }), cx, y0 + 1.1, cz, w - 0.15, 0.4, d - 0.3); break
@@ -158,11 +165,91 @@ function furniture(b, type, x, z, w, d, y0, quality = 1) {
     case 'greenWall': b.box(mat('#5f8f55'), cx, y0 + 1.3, cz, w - 0.05, 2.6, 0.25); break
     case 'neonSign': b.box(mat('#ff4fa3', { emissive: '#ff2f8f', emissiveIntensity: 0.8 }), cx, y0 + 2.4, cz, w - 0.4, 0.3, 0.08); break
     case 'skylight': break // shown as a glazed opening in the roof
+    // --- grocery
+    case 'fridgeProduce': case 'fridgeMeat': case 'fridgeDairy': case 'drinksFridge': {
+      const goods = { fridgeProduce: ['#7cb85a', '#e0a33c', '#c9473c', '#9ccf6a'], fridgeMeat: ['#c0484a', '#e48a83', '#a8323a', '#f0b0a0'], fridgeDairy: ['#f4f1e6', '#e9dfb8', '#cfe3f0', '#f7f4ea'], drinksFridge: ['#3f7bbf', '#e2513b', '#f2c14e', '#5aae6b'] }[type]
+      b.box(mat('#e8ecee'), cx, y0 + 0.95, cz, w - 0.1, 1.9, d - 0.1)
+      for (let r = 0; r < 3; r++) for (let i = 0; i < 4; i++) {
+        const along = w >= d, L = Math.max(w, d), t = 0.3 + i * (L - 0.6) / 3
+        const px = along ? x + t : cx, pz = along ? cz : z + t
+        b.box(mat(goods[(i + r) % 4]), px, y0 + 0.45 + r * 0.5, pz, along ? 0.45 : 0.35, 0.22, along ? 0.35 : 0.45)
+      }
+      b.box(mat('#bfe3f2', { transparent: true, opacity: 0.35 }), cx, y0 + 0.95, cz, w - 0.06, 1.86, d - 0.06)
+      break
+    }
+    case 'shelfProduce': case 'shelfSnacks': case 'shelfCondiments': {
+      const goods = { shelfProduce: ['#c9473c', '#e0a33c', '#8a6b3c', '#9ccf6a'], shelfSnacks: ['#f2c14e', '#e2513b', '#7c4fb0', '#3f7bbf'], shelfCondiments: ['#b8432f', '#f0d27a', '#5b7a3a', '#e8e0cf'] }[type]
+      const tall = type === 'shelfProduce' ? 0.8 : 1.6
+      b.box(wood, cx, y0 + tall / 2, cz, w - 0.1, tall, d - 0.2)
+      const along = w >= d, L = Math.max(w, d)
+      for (let r = 0; r < (type === 'shelfProduce' ? 1 : 3); r++) for (let i = 0; i < Math.round(L * 2); i++) {
+        const t = 0.25 + i * 0.5, px = along ? x + t : cx, pz = along ? cz : z + t
+        b.box(mat(goods[(i + r) % 4]), px, y0 + 0.5 + r * 0.5 + (tall < 1 ? 0.35 : 0), pz, along ? 0.3 : d - 0.15, 0.22, along ? d - 0.15 : 0.3)
+      }
+      break
+    }
+    case 'checkout': b.box(white, cx, y0 + 0.45, cz, w - 0.1, 0.9, d - 0.3); b.box(dark, cx, y0 + 0.92, cz, w - 0.6, 0.05, d - 0.5); b.box(dark, x + 0.3, y0 + 1.15, cz, 0.2, 0.35, 0.05); break
+    case 'bakeryCorner': case 'gourmetDeli': case 'juiceBar':
+      b.box(type === 'juiceBar' ? mat('#f2a33c') : wood, cx, y0 + 0.5, cz, w - 0.1, 1, d - 0.3)
+      b.box(mat('#cfe3ea', { transparent: true, opacity: 0.45 }), cx, y0 + 1.2, cz, w - 0.2, 0.4, d - 0.5)
+      for (let i = 0; i < 4; i++) b.box(mat(['#d7a15a', '#c9473c', '#e0c48a', '#9ccf6a'][i]), x + 0.4 + i * (w - 0.8) / 3, y0 + 1.07, cz, 0.3, 0.14, 0.3)
+      if (type !== 'juiceBar') b.box(mat('#f1efe8'), cx, y0 + 2.4, cz - d / 2 + 0.2, w - 0.4, 0.4, 0.05)
+      break
+    // --- fashion
+    case 'mirror': b.box(mat('#d6e6ee', { roughness: 0.1 }), cx, y0 + 1.0, cz, Math.min(w, 0.8), 1.8, 0.06); break
+    case 'miniDisplay': case 'jewelCase':
+      b.box(white, cx, y0 + 0.5, cz, 0.7, 1, 0.7)
+      b.box(mat('#cfe3ea', { transparent: true, opacity: 0.4 }), cx, y0 + 1.2, cz, 0.7, 0.4, 0.7)
+      b.box(mat(type === 'jewelCase' ? '#e0c060' : '#c96f53'), cx, y0 + 1.08, cz, 0.25, 0.15, 0.25)
+      break
+    case 'mannequin':
+      for (const o of [-0.25, 0, 0.25]) { b.box(mat('#e9e3d8'), cx + o, y0 + 0.9, cz + Math.abs(o) * 0.4, 0.22, 1.0, 0.16); b.box(mat('#e9e3d8'), cx + o, y0 + 1.55, cz + Math.abs(o) * 0.4, 0.14, 0.18, 0.14); b.box(mat(['#9c4e63', '#3f566e', '#f2c14e'][Math.round(o * 4 + 1)]), cx + o, y0 + 1.1, cz + Math.abs(o) * 0.4, 0.26, 0.5, 0.2) }
+      break
+    case 'shoeWall':
+      b.box(wood, cx, y0 + 1.1, cz, w - 0.05, 2.2, d - 0.6)
+      for (let r = 0; r < 5; r++) for (let i = 0; i < 6; i++) b.box(mat(['#2e2e2e', '#b8432f', '#e8e0cf', '#3f566e'][(i + r) % 4]), x + 0.3 + i * (w - 0.6) / 5, y0 + 0.3 + r * 0.42, cz + 0.15, 0.25, 0.1, 0.18)
+      break
+    case 'vipSalon':
+      b.box(mat('#7a3b4b'), cx, y0 + 0.02, cz, w - 0.3, 0.04, d - 0.3)
+      b.box(fabric, cx - 0.6, y0 + 0.25, cz, 0.8, 0.5, 1.6); b.box(fabric, cx + 0.8, y0 + 0.25, cz, 0.7, 0.5, 0.7)
+      b.box(mat('#c9a55a'), cx, y0 + 0.4, cz - 0.8, 0.6, 0.06, 0.6)
+      break
+    case 'runway': b.box(white, cx, y0 + 0.18, cz, w - 0.1, 0.36, d - 0.1); b.box(mat('#c9a55a'), cx, y0 + 0.37, cz, w - 0.5, 0.02, d - 0.4); break
+    // --- food
+    case 'fryer': b.box(steel, cx, y0 + 0.45, cz, w - 0.1, 0.9, d - 0.2); b.box(mat('#e0b040'), cx, y0 + 0.91, cz, w - 0.5, 0.03, d - 0.5); break
+    case 'drinkStation': b.box(mat('#e2513b'), cx, y0 + 0.75, cz, w - 0.1, 1.5, d - 0.3); b.box(dark, cx, y0 + 0.9, cz + d / 2 - 0.15, w - 0.4, 0.3, 0.05); break
+    case 'booth': b.box(mat('#9c3b2f'), cx, y0 + 0.3, z + 0.3, w - 0.1, 0.6, 0.5); b.box(mat('#9c3b2f'), cx, y0 + 0.3, z + d - 0.3, w - 0.1, 0.6, 0.5); b.box(wood, cx, y0 + 0.74, cz, w - 0.6, 0.06, d - 1.3); break
+    case 'pizzaOven': { const g = new THREE.SphereGeometry(Math.min(w, d) * 0.45, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2); g.translate(cx, y0 + 0.9, cz); b.add(mat('#b55a3c'), g); b.box(mat('#8a8279'), cx, y0 + 0.45, cz, w - 0.1, 0.9, d - 0.1); break }
+    case 'wineWall': for (let r = 0; r < 6; r++) b.box(mat(r % 2 ? '#5a1f2a' : look.wood), cx, y0 + 0.2 + r * 0.38, cz, w - 0.1, 0.3, d - 0.5); break
+    case 'chefTable': b.box(mat('#2f3539'), cx, y0 + 0.9, cz, w - 0.2, 0.08, d - 0.6); for (let i = 0; i < 4; i++) b.box(fabric, x + 0.5 + i * (w - 1) / 3, y0 + 0.4, z + d - 0.2, 0.35, 0.8, 0.35); break
+    // --- sport & transport
+    case 'treadmill': case 'spinStudio': for (let i = 0; i < 3; i++) { b.box(dark, x + 0.5 + i * (w - 1) / 2, y0 + 0.2, cz, 0.6, 0.3, d - 0.3); b.box(steel, x + 0.5 + i * (w - 1) / 2, y0 + 0.9, z + 0.3, 0.5, 1.1, 0.08) } break
+    case 'weights': b.box(dark, cx, y0 + 0.6, cz, w - 0.1, 1.2, d - 0.4); for (let i = 0; i < 4; i++) b.box(steel, x + 0.3 + i * (w - 0.6) / 3, y0 + 0.9, cz + 0.2, 0.25, 0.25, 0.25); break
+    case 'courtLines': b.box(mat('#f4f1e6'), cx, y0 + 0.01, z + 0.05, w, 0.01, 0.08); b.box(mat('#f4f1e6'), cx, y0 + 0.01, z + d - 0.05, w, 0.01, 0.08); b.box(mat('#f4f1e6'), x + 0.05, y0 + 0.01, cz, 0.08, 0.01, d); b.box(mat('#f4f1e6'), x + w - 0.05, y0 + 0.01, cz, 0.08, 0.01, d); b.box(mat('#f4f1e6'), cx, y0 + 0.01, cz, 0.08, 0.01, d); break
+    case 'bleachers': for (let r = 0; r < 4; r++) b.box(r % 2 ? mat('#3f7bbf') : steel, cx, y0 + 0.2 + r * 0.4, z + d - 0.25 - r * 0.45, w - 0.1, 0.4 + r * 0.8 - r * 0.4, 0.45); break
+    case 'scoreboard': b.box(dark, cx, y0 + WALL_H - 0.6, cz, w - 0.4, 0.9, 0.5); b.box(mat('#ffb34a', { emissive: '#ff9a1f', emissiveIntensity: 0.7 }), cx, y0 + WALL_H - 0.6, cz + 0.26, w - 0.7, 0.6, 0.02); break
+    case 'checkinDesk': for (let i = 0; i < 4; i++) { b.box(white, x + 0.5 + i, y0 + 0.5, cz, 0.85, 1, d - 0.2); b.box(dark, x + 0.5 + i, y0 + 1.4, cz - 0.3, 0.6, 0.35, 0.05) } break
+    case 'scanner': b.box(steel, cx, y0 + 0.45, cz, w - 0.2, 0.9, d - 0.2); b.box(dark, cx, y0 + 1.1, cz, w - 0.1, 1.2, 0.5); break
+    case 'gateSeats': for (let i = 0; i < 4; i++) { b.box(mat('#3f566e'), x + 0.5 + i, y0 + 0.25, cz, 0.85, 0.5, d - 0.3) } break
+    case 'belt': b.box(dark, cx, y0 + 0.35, cz, w - 0.1, 0.7, d - 0.3); b.box(steel, cx, y0 + 0.72, cz, w - 0.5, 0.04, d - 0.7); break
+    case 'departures': b.box(dark, cx, y0 + WALL_H - 0.6, cz, w - 0.3, 0.8, 0.12); b.box(mat('#ffd34a', { emissive: '#ffbf1f', emissiveIntensity: 0.6 }), cx, y0 + WALL_H - 0.6, cz + 0.07, w - 0.5, 0.6, 0.02); break
+    case 'loungeBar': b.box(mat('#2f3539'), cx, y0 + 0.55, cz, w - 0.1, 1.1, d - 0.3); b.box(mat('#c9a55a'), cx, y0 + 1.12, cz, w, 0.04, d - 0.2); break
+    case 'phoneBooth': b.box(mat('#6c8e86'), cx, y0 + 1.1, cz, w - 0.1, 2.2, d - 0.1); b.box(mat('#cfe3ea', { transparent: true, opacity: 0.4 }), cx, y0 + 1.1, cz + d / 2 - 0.04, w - 0.3, 1.8, 0.03); break
+    case 'readingNook': b.box(fabric, cx, y0 + 0.25, cz, w - 0.3, 0.5, d - 0.3); b.box(wood, cx, y0 + 1, z + 0.15, w - 0.1, 2, 0.25); break
+    case 'palm': { b.box(mat('#c4a17c'), cx, y0 + 0.25, cz, 0.5, 0.5, 0.5); b.box(mat('#7a5a3e'), cx, y0 + 0.9, cz, 0.1, 1, 0.1); for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2; b.box(mat('#5f9a52'), cx + Math.cos(a) * 0.35, y0 + 1.45, cz + Math.sin(a) * 0.35, 0.6, 0.05, 0.18) } break }
+    case 'rug': b.box(mat('#b5694e'), cx, y0 + 0.015, cz, w - 0.3, 0.03, d - 0.3); b.box(mat('#e8d6b8'), cx, y0 + 0.02, cz, w - 0.9, 0.03, d - 0.9); break
+    case 'spotTrack': case 'linear': {
+      const along = w >= d
+      b.box(dark, cx, ceil - (type === 'linear' ? 0.6 : 0.04), cz, along ? w - 0.2 : 0.08, 0.06, along ? 0.08 : d - 0.2)
+      if (type === 'linear') { b.box(dark, x + 0.3, ceil - 0.3, cz, 0.02, 0.6, 0.02); b.box(dark, x + w - 0.3, ceil - 0.3, cz, 0.02, 0.6, 0.02); b.box(glow(), cx, ceil - 0.64, cz, along ? w - 0.3 : 0.05, 0.02, along ? 0.05 : d - 0.3) }
+      else for (let i = 0; i < 4; i++) { const t = 0.3 + i * (Math.max(w, d) - 0.6) / 3; const px = along ? x + t : cx, pz = along ? cz : z + t; b.box(dark, px, ceil - 0.2, pz, 0.12, 0.22, 0.12); b.box(glow(), px, ceil - 0.32, pz, 0.08, 0.02, 0.08) }
+      break
+    }
     default: b.box(white, cx, y0 + 0.4, cz, w - 0.15, 0.8, d - 0.15)
   }
 }
 
-export function buildModel(project, { cutLevel = null, context = true } = {}) {
+export function buildModel(project, { cutLevel = null, context = true, showCeilings = false } = {}) {
   const group = new THREE.Group()
   const { lot } = project
   const b = new Bucket()
@@ -231,7 +318,17 @@ export function buildModel(project, { cutLevel = null, context = true } = {}) {
       }
       if (doors.has(e.key)) {
         if (wallH > 2.2) seg(2.2, wallH)
-        if (e.exterior) b.box(frame, cx, base + 1.1, cz, e.horiz ? 0.9 : 0.05, 2.2, e.horiz ? 0.05 : 0.9)
+        if (e.exterior) {
+          const st = project.door || 'standard'
+          const dm = st === 'glazed' || st === 'revolving' ? glass : mat((DOORS[st] || DOORS.standard).color)
+          if (st === 'revolving') {
+            const g = new THREE.CylinderGeometry(0.48, 0.48, 2.3, 10); g.translate(cx, base + 1.15, cz); b.add(glass, g)
+            b.box(frame, cx, base + 2.33, cz, 1, 0.06, 1)
+          } else {
+            b.box(dm, cx, base + 1.1, cz, e.horiz ? 0.9 : 0.05, 2.2, e.horiz ? 0.05 : 0.9)
+            if (st !== 'standard') b.box(frame, cx, base + 1.1, cz, e.horiz ? 0.04 : 0.08, 2.2, e.horiz ? 0.08 : 0.04)
+          }
+        }
       } else if (e.exterior && glazed) {
         seg(0, Math.min(0.15, wallH)); seg(Math.min(wallH, 2.85), wallH)
         if (wallH > 0.15) b.box(glass, cx, base + (0.15 + Math.min(wallH, 2.85)) / 2, cz, e.horiz ? 1 : 0.06, Math.min(wallH, 2.85) - 0.15, e.horiz ? 0.06 : 1)
@@ -259,6 +356,21 @@ export function buildModel(project, { cutLevel = null, context = true } = {}) {
       for (const r of level.rooms) for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) {
         if (isRoom(li + 1, x, y)) continue
         b.box(sky.has(ck(x, y)) ? glass : mat('#b7b9b4'), x + 0.5, y0 + LEVEL_HEIGHT + 0.1, y + 0.5, 1.001, 0.2, 1.001)
+      }
+    }
+    // ceilings (only while editing them): a translucent soffit in the finish colour
+    if (showCeilings && li === top) {
+      for (const r of level.rooms) {
+        const c = CEILINGS[r.ceiling || 'plain'] || CEILINGS.plain
+        const cm = mat(c.color, { transparent: true, opacity: 0.42, depthWrite: false })
+        b.box(cm, r.x + r.w / 2, y0 + 0.2 + WALL_H - 0.03, r.y + r.h / 2, r.w - 0.02, 0.05, r.h - 0.02)
+        const lines = mat(r.ceiling === 'slats' ? '#8a6440' : r.ceiling === 'exposed' ? '#9aa3a8' : '#d9d2c2')
+        if (r.ceiling === 'slats') for (let x = r.x + 0.25; x < r.x + r.w; x += 0.5) b.box(lines, x, y0 + 0.2 + WALL_H - 0.08, r.y + r.h / 2, 0.12, 0.08, r.h - 0.1)
+        if (r.ceiling === 'coffered') {
+          for (let x = r.x + 1; x < r.x + r.w; x += 1) b.box(lines, x, y0 + 0.2 + WALL_H - 0.1, r.y + r.h / 2, 0.08, 0.1, r.h - 0.1)
+          for (let y = r.y + 1; y < r.y + r.h; y += 1) b.box(lines, r.x + r.w / 2, y0 + 0.2 + WALL_H - 0.1, y, r.w - 0.1, 0.1, 0.08)
+        }
+        if (r.ceiling === 'exposed') for (let y = r.y + 0.8; y < r.y + r.h; y += 1.6) { const g = new THREE.CylinderGeometry(0.12, 0.12, r.w - 0.2, 6); g.rotateZ(Math.PI / 2); g.translate(r.x + r.w / 2, y0 + 0.2 + WALL_H - 0.3, y); b.add(lines, g) }
       }
     }
     // furniture

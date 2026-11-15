@@ -1,23 +1,36 @@
 # BUILT: an architect's career
 
-A roguelite architecture game. You start as a junior architect with no clients. Take commissions, design the building (plan plus low-poly 3D), get reviewed, build a reputation and unlock bigger work. Three disasters and the studio closes; after 10 commissions you retire. The next architect inherits every card you collected.
+A roguelite architecture game. Start as a junior architect with a corner shop. Grades decide where your career goes next, and what every future architect can build with.
 
 ## Loop
-1. **Commission board**: 3 offers from the tiers you've unlocked, plus a locked teaser from the next tier. Each offer rolls a client, two style preferences, a budget and sometimes a twist (heritage district, green mandate, tight budget…).
-2. **Design 2D**: draw rooms, place doors and windows, furnish and equip. Multi-level briefs need stairs and lifts stacked between levels.
-3. **Decorate 3D**: tap inside the model to set floor finishes, per-room wall paint and the facade, place decor and landscaping, and hang ceiling lights (day/night toggle). Furniture, decor, lights, floors and paint come in Basic / Standard / Premium: premium lifts Functionality and Aesthetics at roughly twice the cost.
-4. **Review**: four ratings, averaged. Functionality (circulation, access, walking distance, adjacencies, crowding, wet-room floors, vertical links, lighting, equipment quality), Requirements (room program, equipment, levels, twist rules), Aesthetics (daylight, proportions, style fit, palette, finish quality, lighting mood, landscape, facade, massing, signature pieces) and Budget (rewarded under, punished over).
-5. **Reputation and cards**: 3★+ earns a pick of 3 cards (materials, special items, perks). Score < 50 is a strike.
+1. **Commission board.** The first job is one of three basics: Neighbourhood Boutique, Fast-food Counter or Corner Grocery. After that the board offers jobs at your level on a 1–10 ladder, a safer job one level down or a stretch job after an A or S, plus a locked teaser two levels up. The ladder covers 22 briefs in 10 industries: boutique → fast fashion → chain flagship → luxury maison, café → bistro → fine dining, corner grocery → supermarket → food hall, gym → sports hall → arena, library → school → museum → national museum, apartments, office tower, shopping centre, airport terminal.
+2. **Design 2D.**
+   - The Room and Furnish tools open a catalog. Pick one thing, place as many as you like, then press the red ✕ to stop. The catalog has a **This project / All** filter.
+   - Select a room to get a bubble with **Move** (the room and everything in it), **Merge** (with a same-type neighbour) and **Erase** (asks for confirmation).
+   - The Erase tool only removes objects.
+3. **Decorate 3D.** Floors, wall paint, ceilings, facade and entrance doors, decor and landscaping, and ceiling lights, with a day/night toggle. Quality tiers: Basic, Standard, Premium.
+4. **Review.** Functionality, Requirements, Aesthetics and Budget, averaged into a grade:
+   | Grade | Score | Effect |
+   |---|---|---|
+   | S | ≥ 90 | +2 levels |
+   | A | ≥ 80 | +1 level |
+   | B | ≥ 68 | +1 level |
+   | C | ≥ 55 | −1 level |
+   | F | < 55 | fails: retry for a strike, or abandon the career |
+5. **Rewards.**
+   - **Permanent, for all architects:** B, A and S unlock that industry's basic, advanced and special items. Examples: boutique displays and mannequins (B), shoe walls and jewellery cases (A), a VIP salon and runway (S), or a drinks fridge (B), in-store bakery and deli (A) and a juice bar (S) for grocery.
+   - **This architect only:** fees earn cash for supplier packs: paints, floors, facades, lighting, ceilings, entrance doors, decor and studio services (intern, contractor, mentor, renders).
 
-Tiers: café / bakery / boutique → bistro / clinic / library → apartments / school / museum → office tower / mall / national museum.
+Ten commissions per career, and three strikes closes the studio. Finished careers go to the legacy hall.
 
 ## Controls
-- Plan: one finger uses the current tool, two fingers pan and pinch-zoom. Mouse: wheel zooms, right-drag pans.
-- 3D: drag to orbit, pinch to zoom. "Cutaway" slices at the active level.
+- Plan: one finger uses the tool, two fingers pan and pinch-zoom. Mouse: wheel zooms, right-drag pans.
+- 3D: drag to orbit, pinch to zoom.
 
 ## Code
-- `src/game/`: data (rooms, items, materials, briefs, cards)
-- `src/engine/`: pure logic (plan model, scoring, career/meta), covered by `npm test`
-- `src/ui/`: React screens, SVG plan editor, Three.js scene
+- `src/game/`: data (rooms, items, materials, briefs, packs)
+- `src/engine/`: pure logic (plan, scoring, career and meta), covered by `npm test`
+- `src/ui/`: React screens, SVG plan editor, Three.js scene, feedback layer
+- `.claude/skills/`: vendored game-dev skills (see `AUDIT.md`)
 
 `npm install && npm run dev`

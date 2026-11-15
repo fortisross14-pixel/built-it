@@ -1,8 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { addRoom, canPlaceItem, duplicateLevel, newProject, placeItem, removeRoom, toggleOpening, wallEdges, verticalLinks, addLevel } from '../src/engine/plan.js'
+import { addRoom, canPlaceItem, duplicateLevel, mergeCandidates, mergeRooms, moveRoom, newProject, placeItem, removeRoom, toggleOpening, wallEdges, verticalLinks, addLevel } from '../src/engine/plan.js'
 import { evaluate } from '../src/engine/score.js'
-import { acceptOffer, archiveCareer, claimReward, completeCommission, generateOffers, newCareer, newMeta, repGain, tierFor } from '../src/engine/career.js'
+import { START_CASH, abandonCareer, acceptOffer, acknowledge, archiveCareer, buyPack, completeCommission, makeOffer, newCareer, newMeta, retryCommission, rng, unlocksFor } from '../src/engine/career.js'
+import { PACKS, available, makeCtx } from '../src/game/packs.js'
+import { ITEMS } from '../src/game/catalog.js'
 import { BRIEFS, estimateBudget } from '../src/game/briefs.js'
 import { cafeOffer, referenceCafe } from './fixtures.js'
 
@@ -107,41 +109,113 @@ test('every brief has a sane budget and a lot big enough for its program', () =>
   }
 })
 
-test('career: offers respect tiers and include a locked teaser', () => {
-  const meta = newMeta()
-  const c = newCareer(meta, { name: 'Test', kit: [], seed: 5 })
-  const open = c.offers.filter(o => !o.locked)
-  assert.equal(open.length, 3)
-  assert.ok(open.every(o => o.tier === 1))
-  assert.ok(c.offers.some(o => o.locked && o.tier === 2))
-  assert.equal(tierFor(25), 2)
-  assert.equal(generateOffers({ ...c, kit: ['network'] }).filter(o => !o.locked).length, 4)
+const res = (overall) => ({ overall, functionality: overall, requirements: overall, aesthetics: overall, budget: overall, stars: 3, cost: { total: 1 } })
+
+test('career: first offers are the three basics, then the ladder adapts to grades', () => {
+  let meta = newMeta()
+  let c = newCareer(meta, { name: 'Test', seed: 5 })
+  assert.deepEqual(c.offers.map(o => o.level), [1, 1, 1])
+  assert.deepEqual(new Set(c.offers.map(o => o.industry)), new Set(['fashion', 'food', 'grocery']))
+  // S jumps two levels
+  c = acceptOffer(c, c.offers[0].id, {})
+  let r = completeCommission(meta, c, res(95), null); meta = r.meta; c = acknowledge(r.career)
+  assert.equal(c.level, 3)
+  assert.ok(c.cash > START_CASH)
+  assert.ok(c.offers.filter(o => !o.locked).some(o => o.level === 4), 'A/S grade offers a stretch')
+  // C drops a level
+  c = acceptOffer(c, c.offers.find(o => !o.locked && o.level === 3).id, {})
+  r = completeCommission(meta, c, res(60), null); meta = r.meta; c = acknowledge(r.career)
+  assert.equal(c.level, 2)
+  assert.equal(r.unlocks.length, 0, 'C unlocks nothing')
 })
 
-test('career: completing, rewards, strikes and archiving', () => {
+test('career: grades unlock industry items permanently (B < A < S)', () => {
+  assert.ok(unlocksFor('fashion', 'B').includes('miniDisplay'))
+  assert.ok(!unlocksFor('fashion', 'B').includes('shoeWall'))
+  assert.ok(unlocksFor('fashion', 'A').includes('shoeWall'))
+  assert.ok(unlocksFor('fashion', 'S').includes('vipSalon'))
+  assert.ok(!unlocksFor('fashion', 'C').length)
+  assert.ok(unlocksFor('grocery', 'B').includes('drinksFridge'))
   let meta = newMeta()
-  let c = newCareer(meta, { name: 'Test', kit: [], seed: 9 })
-  const offer = c.offers[0]
-  c = acceptOffer(c, offer.id, {})
-  const good = { overall: 88, functionality: 90, requirements: 90, aesthetics: 84, stars: 4, cost: { total: 1 } }
-  let res = completeCommission(meta, c, good, null)
-  c = res.career
-  assert.ok(c.rep > 0)
-  assert.equal(c.reward.choices.length, 3)
-  ;({ meta, career: c } = claimReward(meta, c, c.reward.choices[0]))
-  assert.equal(meta.collection.length, 4)
-  const bad = { overall: 30, functionality: 30, requirements: 30, aesthetics: 30, stars: 1, cost: { total: 1 } }
-  for (let i = 0; i < 3; i++) {
-    c = acceptOffer(c, c.offers[0].id, {})
-    c = completeCommission(meta, c, bad, null).career
-    assert.equal(c.reward.choices.length, 0)
-    c = claimReward(meta, c, null).career
+  let c = newCareer(meta, { name: 'Test', seed: 2 })
+  c = acceptOffer(c, c.offers.find(o => o.industry === 'fashion').id, {})
+  const r = completeCommission(meta, c, res(84), null)
+  assert.ok(r.meta.unlocked.includes('shoeWall') && r.meta.unlocked.includes('miniDisplay'))
+  const ctxNew = makeCtx(r.meta, newCareer(r.meta, { name: 'Next', seed: 3 }))
+  assert.ok(available(ITEMS.shoeWall, 'shoeWall', ctxNew), 'unlocks carry to the next architect')
+  assert.ok(!available(ITEMS.pendant, 'pendant', ctxNew), 'packs do not')
+})
+
+test('career: F fails, costs a strike, keeps the commission for a retry; 3 strikes ends it', () => {
+  const meta = newMeta()
+  let c = newCareer(meta, { name: 'Test', seed: 9 })
+  c = acceptOffer(c, c.offers[0].id, { draft: 1 })
+  for (let i = 1; i <= 3; i++) {
+    const r = completeCommission(meta, c, res(30), null)
+    assert.equal(r.entry.grade, 'F')
+    assert.ok(r.career.current, 'commission stays open for retry')
+    assert.equal(r.career.portfolio.length, 0)
+    c = retryCommission(r.career)
+    assert.equal(c.strikes, i)
   }
   assert.equal(c.status, 'fired')
-  meta = archiveCareer(meta, c)
-  assert.equal(meta.legacy.length, 1)
-  assert.equal(meta.careers, 1)
-  assert.ok(repGain(30, offer, []) < 0)
+  const m = archiveCareer(meta, c)
+  assert.equal(m.legacy.length, 1)
+  assert.equal(abandonCareer(newCareer(meta, { name: 'X', seed: 1 })).status, 'abandoned')
+})
+
+test('shop: packs cost cash and unlock for this architect', () => {
+  const meta = newMeta()
+  let c = newCareer(meta, { name: 'Test', seed: 4 })
+  assert.ok(buyPack(c, 'stone').error, 'too expensive at start')
+  const r = buyPack(c, 'ambient')
+  assert.ok(!r.error)
+  assert.equal(r.career.cash, START_CASH - PACKS.ambient.price)
+  assert.ok(available(ITEMS.pendant, 'pendant', makeCtx(meta, r.career)))
+})
+
+test('every brief requirement is placeable with base items', () => {
+  for (const [id, b] of Object.entries(BRIEFS)) {
+    for (const req of b.items) {
+      if (req.type) assert.ok(!ITEMS[req.type].unlock && !ITEMS[req.type].pack, `${id} requires locked ${req.type}`)
+      if (req.family) assert.ok(Object.values(ITEMS).some(i => (i.family === req.family || (req.family === 'tableFam')) && !i.unlock && !i.pack), `${id} family ${req.family}`)
+    }
+  }
+  const levels = new Set(Object.values(BRIEFS).map(b => b.level))
+  for (let l = 1; l <= 10; l++) assert.ok(levels.has(l), `no brief at level ${l}`)
+})
+
+test('rooms: move carries contents; merge joins same-type neighbours', () => {
+  let p = referenceCafe()
+  const dining = p.levels[0].rooms.find(r => r.type === 'seating')
+  assert.match(moveRoom(p, 0, dining.id, 1, 0).error, /Overlaps/)
+  const service = p.levels[0].rooms.find(r => r.type === 'service')
+  // move the WC (2x3 at 14,2) down by 6 cells: free space
+  const wc = p.levels[0].rooms.find(r => r.type === 'wc')
+  const moved = moveRoom(p, 0, wc.id, 0, 6)
+  assert.ok(!moved.error, moved.error)
+  const toilet = moved.project.levels[0].items.find(i => i.type === 'toilet')
+  assert.equal(toilet.y, 4 + 6)
+  let q = newProject(cafeOffer())
+  q = addRoom(q, 0, { x: 0, y: 0, w: 4, h: 4 }, 'seating').project
+  q = addRoom(q, 0, { x: 4, y: 0, w: 3, h: 4 }, 'seating').project
+  q = addRoom(q, 0, { x: 0, y: 4, w: 3, h: 3 }, 'seating').project
+  const [a, b, c] = q.levels[0].rooms
+  assert.deepEqual(mergeCandidates(q.levels[0], a).map(r => r.id), [b.id])
+  const m = mergeRooms(q, 0, a.id, b.id)
+  assert.equal(m.project.levels[0].rooms.length, 2)
+  assert.equal(m.room.w, 7)
+  assert.ok(mergeRooms(q, 0, a.id, c.id).error)
+  assert.ok(service)
+})
+
+test('family requirements accept any variant', () => {
+  const offer = { ...makeOffer('boutique', rng(1), 0), twist: null }
+  let p = newProject(offer)
+  p = addRoom(p, 0, { x: 1, y: 1, w: 8, h: 6 }, 'sales').project
+  for (const [t, x] of [['rackWomen', 1], ['rackMen', 3], ['rackKids', 5], ['rackKids', 1]]) p = placeItem(p, 0, { type: t, x, y: x === 1 && t === 'rackKids' ? 4 : 2 }).project
+  const r = evaluate(p, offer)
+  assert.ok(r.checklist.find(c => c.family === 'rack').ok)
 })
 
 test('quality is a trade-off: premium raises F and A but costs budget', () => {

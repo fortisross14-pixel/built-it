@@ -1,7 +1,7 @@
 // Plan model: rooms are axis-aligned rectangles on a 1 m grid, per level.
 // Walls are derived from room perimeters; doors and windows live on wall edges.
 // Edge keys: "h:x:y" = top edge of cell (x,y); "v:x:y" = left edge of cell (x,y).
-import { BASE_COST, ITEMS, MATERIALS, ROOMS, itemCost, itemSize, q } from '../game/catalog.js'
+import { BASE_COST, CEILINGS, DOORS, ITEMS, MATERIALS, ROOMS, itemCost, itemSize, q } from '../game/catalog.js'
 
 let counter = 0
 export function uid(prefix = 'id') {
@@ -19,6 +19,7 @@ export function newProject(offer) {
     lot: { ...offer.lot },
     levels: [emptyLevel()],
     facade: 'stucco',
+    door: 'standard',
     version: 1,
   }
 }
@@ -67,7 +68,7 @@ export function addRoom(project, li, rect, type, floor = 'vinyl') {
   if (!check.ok) return { project, error: check.error }
   const p = clone(project)
   const wet = ROOMS[type]?.wet
-  const room = { id: uid('r'), type, floor: wet && !MATERIALS[floor]?.wetSafe ? 'ceramic' : floor, floorQ: 1, wall: 'chalk', wallQ: 1, ...rect }
+  const room = { id: uid('r'), type, floor: wet && !MATERIALS[floor]?.wetSafe ? 'ceramic' : floor, floorQ: 1, wall: 'chalk', wallQ: 1, ceiling: 'plain', ...rect }
   p.levels[li].rooms.push(room)
   return { project: cleanup(p), room }
 }
@@ -83,6 +84,51 @@ export function updateRoom(project, li, id, patch) {
   }
   Object.assign(room, next)
   return { project: cleanup(p), room }
+}
+
+const shiftKey = (k, dx, dy) => { const [o, x, y] = k.split(':'); return `${o}:${+x + dx}:${+y + dy}` }
+const inRect = (r, x, y) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h
+
+// Move a room with everything it holds: furniture, decor, lights and the doors and windows
+// in its walls. Fails if rooms on the level above rest on it.
+export function moveRoom(project, li, id, dx, dy) {
+  const level = project.levels[li]
+  const room = level.rooms.find(r => r.id === id)
+  if (!room) return { project }
+  if (!dx && !dy) return { project }
+  const next = { ...room, x: room.x + dx, y: room.y + dy }
+  const check = canPlaceRoom(project, li, next, id)
+  if (!check.ok) return { project, error: check.error }
+  const above = project.levels[li + 1]
+  if (above && above.rooms.some(r => overlaps(r, room))) return { project, error: 'Rooms on the level above stand on this one. Move those first.' }
+  const p = clone(project)
+  const L = p.levels[li]
+  const owns = (k) => edgeCells(k).some(c => inRect(room, c.x, c.y))
+  L.doors = L.doors.map(k => owns(k) ? shiftKey(k, dx, dy) : k)
+  L.windows = L.windows.map(k => owns(k) ? shiftKey(k, dx, dy) : k)
+  for (const it of L.items) if (!ITEMS[it.type].site && inRect(room, it.x, it.y)) { it.x += dx; it.y += dy }
+  Object.assign(L.rooms.find(r => r.id === id), { x: next.x, y: next.y })
+  return { project: cleanup(p) }
+}
+
+// Same-type neighbours that share a full side, so the union stays a rectangle.
+export function mergeCandidates(level, room) {
+  return level.rooms.filter(o => o.id !== room.id && o.type === room.type && (
+    (o.y === room.y && o.h === room.h && (o.x === room.x + room.w || o.x + o.w === room.x)) ||
+    (o.x === room.x && o.w === room.w && (o.y === room.y + room.h || o.y + o.h === room.y))))
+}
+
+export function mergeRooms(project, li, aId, bId) {
+  const level = project.levels[li]
+  const a = level.rooms.find(r => r.id === aId), b = level.rooms.find(r => r.id === bId)
+  if (!a || !b || !mergeCandidates(level, a).some(r => r.id === bId)) return { project, error: 'Only same-type rooms that share a whole wall can merge.' }
+  const p = clone(project)
+  const L = p.levels[li]
+  const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y)
+  const w = Math.max(a.x + a.w, b.x + b.w) - x, h = Math.max(a.y + a.h, b.y + b.h) - y
+  Object.assign(L.rooms.find(r => r.id === aId), { x, y, w, h })
+  L.rooms = L.rooms.filter(r => r.id !== bId)
+  return { project: cleanup(p), room: L.rooms.find(r => r.id === aId) }
 }
 
 export function removeRoom(project, li, id) {
@@ -298,7 +344,9 @@ export function projectCost(project, kit = []) {
       shell += roomArea(r) * BASE_COST.perM2 * premium
       finishes += roomArea(r) * (MATERIALS[r.floor]?.cost || 40) * q(r.floorQ).cost
       paint += 2 * (r.w + r.h) * 3 * BASE_COST.paint * q(r.wallQ).cost
+      paint += roomArea(r) * (CEILINGS[r.ceiling]?.cost || 25)
     }
+    if (li === 0) { const edges = wallEdges(level); for (const k of level.doors) if (edges.get(k)?.exterior) openings += DOORS[project.door]?.cost || 0 }
     for (const it of level.items) items += itemCost(it)
     openings += level.doors.length * BASE_COST.door + level.windows.length * BASE_COST.window
     for (const e of wallEdges(level).values()) if (e.exterior) facade += facadeRate
