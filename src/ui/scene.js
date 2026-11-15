@@ -4,7 +4,7 @@ import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { CEILINGS, DOORS, ITEMS, LEVEL_HEIGHT, MATERIALS, PAINTS, itemSize } from '../game/catalog.js'
-import { cellOwners, ck, wallEdges } from '../engine/plan.js'
+import { cellOwners, ck, roomCells, roomRuns, wallEdges } from '../engine/plan.js'
 
 const WALL_T = 0.2
 const WALL_H = LEVEL_HEIGHT - 0.2
@@ -298,7 +298,7 @@ export function buildModel(project, { cutLevel = null, context = true, showCeili
     // slabs
     for (const r of level.rooms) {
       const fm = mat((MATERIALS[r.floor] || MATERIALS.vinyl).color)
-      b.box(fm, r.x + r.w / 2, y0 + 0.1, r.y + r.h / 2, r.w, 0.2, r.h)
+      for (const q of roomRuns(r)) b.box(fm, q.x + q.w / 2, y0 + 0.1, q.y + q.h / 2, q.w, 0.2, q.h)
     }
     // walls
     const doors = new Set(level.doors), windows = new Set(level.windows)
@@ -353,14 +353,15 @@ export function buildModel(project, { cutLevel = null, context = true, showCeili
       for (const it of level.items) if (it.type === 'skylight') {
         const s = itemSize(it); for (let yy = it.y; yy < it.y + s.h; yy++) for (let xx = it.x; xx < it.x + s.w; xx++) sky.add(ck(xx, yy))
       }
-      for (const r of level.rooms) for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) {
+      for (const r of level.rooms) for (const k of roomCells(r)) {
+        const [x, y] = k.split(':').map(Number)
         if (isRoom(li + 1, x, y)) continue
         b.box(sky.has(ck(x, y)) ? glass : mat('#b7b9b4'), x + 0.5, y0 + LEVEL_HEIGHT + 0.1, y + 0.5, 1.001, 0.2, 1.001)
       }
     }
     // ceilings (only while editing them): a translucent soffit in the finish colour
     if (showCeilings && li === top) {
-      for (const r of level.rooms) {
+      for (const room of level.rooms) for (const r of roomRuns(room).map(q => ({ ...q, ceiling: room.ceiling }))) {
         const c = CEILINGS[r.ceiling || 'plain'] || CEILINGS.plain
         const cm = mat(c.color, { transparent: true, opacity: 0.42, depthWrite: false })
         b.box(cm, r.x + r.w / 2, y0 + 0.2 + WALL_H - 0.03, r.y + r.h / 2, r.w - 0.02, 0.05, r.h - 0.02)

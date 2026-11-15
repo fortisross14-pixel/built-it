@@ -26,20 +26,107 @@ export function newProject(offer) {
 
 export function clone(p) { return structuredClone(p) }
 
-export function roomArea(r) { return r.w * r.h }
+// ---------------------------------------------------------------- room shapes
+// A room is any orthogonal shape: a set of 1 m cells (r.cells, keys "x:y"). x/y/w/h are kept as
+// its bounding box for layout and labels. Old saves without cells fall back to the box.
+const cellCache = new WeakMap()
+export function rectCells(rect) {
+  const out = []
+  for (let y = rect.y; y < rect.y + rect.h; y++) for (let x = rect.x; x < rect.x + rect.w; x++) out.push(ck(x, y))
+  return out
+}
+export function roomCells(r) { return r.cells || rectCells(r) }
+export function roomCellSet(r) {
+  let s = cellCache.get(r)
+  if (!s) { s = new Set(roomCells(r)); cellCache.set(r, s) }
+  return s
+}
+export function inRoom(r, x, y) { return roomCellSet(r).has(ck(x, y)) }
+export function roomArea(r) { return roomCells(r).length }
+const parse = (k) => { const [x, y] = k.split(':'); return { x: +x, y: +y } }
+
+export function withCells(room, cells) {
+  const pts = cells.map(parse)
+  const x = Math.min(...pts.map(p => p.x)), y = Math.min(...pts.map(p => p.y))
+  const w = Math.max(...pts.map(p => p.x)) - x + 1, h = Math.max(...pts.map(p => p.y)) - y + 1
+  return { ...room, cells: [...cells].sort(), x, y, w, h }
+}
+
+export function isConnected(cells) {
+  const set = new Set(cells)
+  if (!set.size) return false
+  const first = cells[0] ?? [...set][0]
+  const seen = new Set([first]), q = [first]
+  while (q.length) {
+    const { x, y } = parse(q.pop())
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const k = ck(x + dx, y + dy)
+      if (set.has(k) && !seen.has(k)) { seen.add(k); q.push(k) }
+    }
+  }
+  return seen.size === set.size
+}
+
+// Rectangles covering the shape (row runs, stacked when identical): for fills, slabs, highlights.
+export function roomRuns(r) {
+  const set = roomCellSet(r)
+  const rows = new Map()
+  for (const k of set) { const { x, y } = parse(k); if (!rows.has(y)) rows.set(y, []); rows.get(y).push(x) }
+  const runs = []
+  for (const y of [...rows.keys()].sort((a, b) => a - b)) {
+    const xs = rows.get(y).sort((a, b) => a - b)
+    let s0 = xs[0], prev = xs[0]
+    const flush = (a, b) => {
+      const up = runs.find(R => R.x === a && R.w === b - a + 1 && R.y + R.h === y)
+      if (up) up.h++; else runs.push({ x: a, y, w: b - a + 1, h: 1 })
+    }
+    for (let i = 1; i <= xs.length; i++) {
+      if (i < xs.length && xs[i] === prev + 1) { prev = xs[i]; continue }
+      flush(s0, prev)
+      if (i < xs.length) { s0 = prev = xs[i] }
+    }
+  }
+  return runs
+}
+
+// SVG path of the room boundary (every cell side that doesn't face the same room).
+export function roomOutline(r) {
+  const set = roomCellSet(r)
+  let d = ''
+  for (const k of set) {
+    const { x, y } = parse(k)
+    if (!set.has(ck(x, y - 1))) d += `M${x} ${y}H${x + 1}`
+    if (!set.has(ck(x, y + 1))) d += `M${x} ${y + 1}H${x + 1}`
+    if (!set.has(ck(x - 1, y))) d += `M${x} ${y}V${y + 1}`
+    if (!set.has(ck(x + 1, y))) d += `M${x + 1} ${y}V${y + 1}`
+  }
+  return d
+}
+
+export function roomPerimeter(r) {
+  const set = roomCellSet(r)
+  let n = 0
+  for (const k of set) { const { x, y } = parse(k); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (!set.has(ck(x + dx, y + dy))) n++ }
+  return n
+}
+
+// A good spot for the room tag: the room cell nearest the shape's centroid.
+export function labelPoint(r) {
+  const pts = roomCells(r).map(parse)
+  const cx = pts.reduce((s, p) => s + p.x + 0.5, 0) / pts.length, cy = pts.reduce((s, p) => s + p.y + 0.5, 0) / pts.length
+  if (inRoom(r, Math.floor(cx), Math.floor(cy))) return { x: cx, y: cy }
+  const best = pts.reduce((b, p) => { const d = (p.x + 0.5 - cx) ** 2 + (p.y + 0.5 - cy) ** 2; return !b || d < b.d ? { p, d } : b }, null).p
+  return { x: best.x + 0.5, y: best.y + 0.5 }
+}
 
 export function cellOwners(level) {
   const map = new Map()
-  for (const r of level.rooms) for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) map.set(ck(x, y), r)
+  for (const r of level.rooms) for (const k of roomCells(r)) map.set(k, r)
   return map
 }
 
 export function roomAt(level, x, y) {
-  return level.rooms.find(r => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) || null
-}
-
-function overlaps(a, b) {
-  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+  return level.rooms.find(r => inRoom(r, x, y)) || null
 }
 
 export function normRect(a, b) {
@@ -47,18 +134,19 @@ export function normRect(a, b) {
   return { x, y, w: Math.abs(a.x - b.x) + 1, h: Math.abs(a.y - b.y) + 1 }
 }
 
-export function canPlaceRoom(project, li, rect, ignoreId = null) {
+// shape: a rectangle {x,y,w,h} or a list of cell keys.
+export function canPlaceRoom(project, li, shape, ignoreId = null) {
   const { lot } = project
-  if (rect.w < 2 || rect.h < 2) return { ok: false, error: 'Rooms must be at least 2 × 2 m.' }
-  if (rect.x < 0 || rect.y < 0 || rect.x + rect.w > lot.w || rect.y + rect.h > lot.h) return { ok: false, error: 'Outside the lot boundary.' }
-  const level = project.levels[li]
-  if (level.rooms.some(r => r.id !== ignoreId && overlaps(r, rect))) return { ok: false, error: 'Overlaps another room.' }
+  const isRect = !Array.isArray(shape)
+  if (isRect && (shape.w < 2 || shape.h < 2)) return { ok: false, error: 'Rooms must be at least 2 × 2 m.' }
+  const cells = isRect ? rectCells(shape) : shape
+  if (cells.some(k => { const { x, y } = parse(k); return x < 0 || y < 0 || x >= lot.w || y >= lot.h })) return { ok: false, error: 'Outside the lot boundary.' }
+  const owners = cellOwners(project.levels[li])
+  if (cells.some(k => owners.has(k) && owners.get(k).id !== ignoreId)) return { ok: false, error: 'Overlaps another room.' }
   if (li > 0) {
     // Upper floors must sit on something: every cell needs a room below it.
     const below = cellOwners(project.levels[li - 1])
-    for (let y = rect.y; y < rect.y + rect.h; y++) for (let x = rect.x; x < rect.x + rect.w; x++) {
-      if (!below.has(ck(x, y))) return { ok: false, error: 'Upper-floor rooms need structure below them.' }
-    }
+    if (cells.some(k => !below.has(k))) return { ok: false, error: 'Upper-floor rooms need structure below them.' }
   }
   return { ok: true }
 }
@@ -68,7 +156,7 @@ export function addRoom(project, li, rect, type, floor = 'vinyl') {
   if (!check.ok) return { project, error: check.error }
   const p = clone(project)
   const wet = ROOMS[type]?.wet
-  const room = { id: uid('r'), type, floor: wet && !MATERIALS[floor]?.wetSafe ? 'ceramic' : floor, floorQ: 1, wall: 'chalk', wallQ: 1, ceiling: 'plain', ...rect }
+  const room = withCells({ id: uid('r'), type, floor: wet && !MATERIALS[floor]?.wetSafe ? 'ceramic' : floor, floorQ: 1, wall: 'chalk', wallQ: 1, ceiling: 'plain' }, rectCells(rect))
   p.levels[li].rooms.push(room)
   return { project: cleanup(p), room }
 }
@@ -77,17 +165,55 @@ export function updateRoom(project, li, id, patch) {
   const p = clone(project)
   const room = p.levels[li].rooms.find(r => r.id === id)
   if (!room) return { project }
-  const next = { ...room, ...patch }
-  if (['x', 'y', 'w', 'h'].some(k => k in patch)) {
-    const check = canPlaceRoom(p, li, next, id)
-    if (!check.ok) return { project, error: check.error }
-  }
-  Object.assign(room, next)
+  Object.assign(room, patch)
   return { project: cleanup(p), room }
 }
 
+// Rooms above that rest on any of these cells.
+function supportsAbove(project, li, cells) {
+  const above = project.levels[li + 1]
+  if (!above) return false
+  const owners = cellOwners(above)
+  return cells.some(k => owners.has(k))
+}
+
+// Add a rectangle to a room. It must touch the room and land on free, buildable cells.
+export function extendRoom(project, li, id, rect) {
+  const level = project.levels[li]
+  const room = level.rooms.find(r => r.id === id)
+  if (!room) return { project }
+  const own = roomCellSet(room)
+  const add = rectCells(rect).filter(k => !own.has(k))
+  if (!add.length) return { project, error: 'That area is already part of the room.' }
+  const check = canPlaceRoom(project, li, add, id)
+  if (!check.ok) return { project, error: check.error }
+  const cells = [...own, ...add]
+  if (!isConnected(cells)) return { project, error: 'The extension has to touch the room.' }
+  const p = clone(project)
+  const i = p.levels[li].rooms.findIndex(r => r.id === id)
+  p.levels[li].rooms[i] = withCells(p.levels[li].rooms[i], cells)
+  return { project: cleanup(p), room: p.levels[li].rooms[i] }
+}
+
+// Carve a rectangle out of a room (notches, courtyards). The rest must stay in one piece.
+export function cutRoom(project, li, id, rect) {
+  const level = project.levels[li]
+  const room = level.rooms.find(r => r.id === id)
+  if (!room) return { project }
+  const cut = new Set(rectCells(rect))
+  const removed = roomCells(room).filter(k => cut.has(k))
+  if (!removed.length) return { project, error: 'Drag across part of the room to cut it.' }
+  const cells = roomCells(room).filter(k => !cut.has(k))
+  if (cells.length < 2) return { project, error: 'That would remove the whole room. Use Erase instead.' }
+  if (!isConnected(cells)) return { project, error: 'That cut would split the room in two.' }
+  if (supportsAbove(project, li, removed)) return { project, error: 'Rooms on the level above stand on that part.' }
+  const p = clone(project)
+  const i = p.levels[li].rooms.findIndex(r => r.id === id)
+  p.levels[li].rooms[i] = withCells(p.levels[li].rooms[i], cells)
+  return { project: cleanup(p), room: p.levels[li].rooms[i] }
+}
+
 const shiftKey = (k, dx, dy) => { const [o, x, y] = k.split(':'); return `${o}:${+x + dx}:${+y + dy}` }
-const inRect = (r, x, y) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h
 
 // Move a room with everything it holds: furniture, decor, lights and the doors and windows
 // in its walls. Fails if rooms on the level above rest on it.
@@ -96,37 +222,38 @@ export function moveRoom(project, li, id, dx, dy) {
   const room = level.rooms.find(r => r.id === id)
   if (!room) return { project }
   if (!dx && !dy) return { project }
-  const next = { ...room, x: room.x + dx, y: room.y + dy }
-  const check = canPlaceRoom(project, li, next, id)
+  const moved = roomCells(room).map(k => { const { x, y } = parse(k); return ck(x + dx, y + dy) })
+  const check = canPlaceRoom(project, li, moved, id)
   if (!check.ok) return { project, error: check.error }
-  const above = project.levels[li + 1]
-  if (above && above.rooms.some(r => overlaps(r, room))) return { project, error: 'Rooms on the level above stand on this one. Move those first.' }
+  if (supportsAbove(project, li, roomCells(room))) return { project, error: 'Rooms on the level above stand on this one. Move those first.' }
   const p = clone(project)
   const L = p.levels[li]
-  const owns = (k) => edgeCells(k).some(c => inRect(room, c.x, c.y))
+  const owns = (k) => edgeCells(k).some(c => inRoom(room, c.x, c.y))
   L.doors = L.doors.map(k => owns(k) ? shiftKey(k, dx, dy) : k)
   L.windows = L.windows.map(k => owns(k) ? shiftKey(k, dx, dy) : k)
-  for (const it of L.items) if (!ITEMS[it.type].site && inRect(room, it.x, it.y)) { it.x += dx; it.y += dy }
-  Object.assign(L.rooms.find(r => r.id === id), { x: next.x, y: next.y })
+  for (const it of L.items) if (!ITEMS[it.type].site && inRoom(room, it.x, it.y)) { it.x += dx; it.y += dy }
+  const i = L.rooms.findIndex(r => r.id === id)
+  L.rooms[i] = withCells(L.rooms[i], moved)
   return { project: cleanup(p) }
 }
 
-// Same-type neighbours that share a full side, so the union stays a rectangle.
+// Same-type neighbours that share at least one wall. The merged room can be any shape.
 export function mergeCandidates(level, room) {
-  return level.rooms.filter(o => o.id !== room.id && o.type === room.type && (
-    (o.y === room.y && o.h === room.h && (o.x === room.x + room.w || o.x + o.w === room.x)) ||
-    (o.x === room.x && o.w === room.w && (o.y === room.y + room.h || o.y + o.h === room.y))))
+  const own = roomCellSet(room)
+  return level.rooms.filter(o => o.id !== room.id && o.type === room.type && roomCells(o).some(k => {
+    const { x, y } = parse(k)
+    return own.has(ck(x + 1, y)) || own.has(ck(x - 1, y)) || own.has(ck(x, y + 1)) || own.has(ck(x, y - 1))
+  }))
 }
 
 export function mergeRooms(project, li, aId, bId) {
   const level = project.levels[li]
   const a = level.rooms.find(r => r.id === aId), b = level.rooms.find(r => r.id === bId)
-  if (!a || !b || !mergeCandidates(level, a).some(r => r.id === bId)) return { project, error: 'Only same-type rooms that share a whole wall can merge.' }
+  if (!a || !b || !mergeCandidates(level, a).some(r => r.id === bId)) return { project, error: 'Only same-type rooms that share a wall can merge.' }
   const p = clone(project)
   const L = p.levels[li]
-  const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y)
-  const w = Math.max(a.x + a.w, b.x + b.w) - x, h = Math.max(a.y + a.h, b.y + b.h) - y
-  Object.assign(L.rooms.find(r => r.id === aId), { x, y, w, h })
+  const i = L.rooms.findIndex(r => r.id === aId)
+  L.rooms[i] = withCells(L.rooms[i], [...roomCells(a), ...roomCells(b)])
   L.rooms = L.rooms.filter(r => r.id !== bId)
   return { project: cleanup(p), room: L.rooms.find(r => r.id === aId) }
 }
@@ -142,7 +269,8 @@ export function wallEdges(level) {
   const owners = cellOwners(level)
   const edges = new Map()
   for (const r of level.rooms) {
-    for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) {
+    for (const k of roomCells(r)) {
+      const [x, y] = k.split(':').map(Number)
       const sides = [
         { key: `h:${x}:${y}`, nx: x, ny: y - 1, x1: x, y1: y, x2: x + 1, y2: y, horiz: true },
         { key: `h:${x}:${y + 1}`, nx: x, ny: y + 1, x1: x, y1: y + 1, x2: x + 1, y2: y + 1, horiz: true },
@@ -343,7 +471,7 @@ export function projectCost(project, kit = []) {
     for (const r of level.rooms) {
       shell += roomArea(r) * BASE_COST.perM2 * premium
       finishes += roomArea(r) * (MATERIALS[r.floor]?.cost || 40) * q(r.floorQ).cost
-      paint += 2 * (r.w + r.h) * 3 * BASE_COST.paint * q(r.wallQ).cost
+      paint += roomPerimeter(r) * 3 * BASE_COST.paint * q(r.wallQ).cost
       paint += roomArea(r) * (CEILINGS[r.ceiling]?.cost || 25)
     }
     if (li === 0) { const edges = wallEdges(level); for (const k of level.doors) if (edges.get(k)?.exterior) openings += DOORS[project.door]?.cost || 0 }

@@ -1,14 +1,14 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ITEMS, MATERIALS, ROOMS, itemSize } from '../game/catalog.js'
 import { settings } from './fx.js'
-import { nearestEdge, normRect, wallEdges, roomArea } from '../engine/plan.js'
+import { inRoom, labelPoint, nearestEdge, normRect, roomArea, roomOutline, roomRuns, wallEdges } from '../engine/plan.js'
 
 // CAD-style plan editor. One finger = current tool, two fingers = pan/zoom.
 // Mouse: wheel zooms, right/middle drag pans.
 export default function PlanView({
   project, li, tool, itemType, itemRot = 0, selection, fitSignal = 0,
   validateRect, validateItem, onTap, onRect, onStroke, onItemDrop, onMoveItem, flash,
-  moving = null, onMoveDrag, mergeIds = null, bubble = null,
+  moving = null, onMoveDrag, mergeIds = null, bubble = null, shaping = null,
 }) {
   const wrap = useRef(null)
   const svg = useRef(null)
@@ -229,8 +229,8 @@ export default function PlanView({
     const ok = validateRect ? validateRect(r) : { ok: true }
     preview = (
       <g className="pv-rect">
-        <rect x={r.x} y={r.y} width={r.w} height={r.h} className={ok.ok ? 'ok' : 'bad'} />
-        <text x={r.x + r.w / 2} y={r.y - 0.45} className="pv-label">{r.w} × {r.h} m · {r.w * r.h} m²</text>
+        <rect x={r.x} y={r.y} width={r.w} height={r.h} className={`${ok.ok ? 'ok' : 'bad'} ${shaping === 'cut' ? 'cut' : ''}`} />
+        <text x={r.x + r.w / 2} y={r.y - 0.45} className="pv-label">{shaping === 'cut' ? 'Cut ' : shaping === 'extend' ? 'Add ' : ''}{r.w} × {r.h} m · {r.w * r.h} m²</text>
         {!ok.ok && <text x={r.x + r.w / 2} y={r.y + r.h + 0.9} className="pv-label bad">{ok.error}</text>}
       </g>
     )
@@ -266,7 +266,7 @@ export default function PlanView({
   if (bubble && anchor && size.w > 1) {
     const sx = (anchor.x + anchor.w / 2 - vb[0]) * v.z
     const top = (anchor.y - vb[1]) * v.z, bottom = (anchor.y + anchor.h - vb[1]) * v.z
-    const below = top < 70
+    const below = top < 150
     const bw = Math.min(340, size.w - 16)
     const left = Math.max(bw / 2 + 8, Math.min(size.w - bw / 2 - 8, sx))
     bubblePos = { left, top: below ? Math.min(size.h - 12, bottom + 10) : top - 10, below, bw, ax: Math.max(-bw / 2 + 20, Math.min(bw / 2 - 20, sx - left)) }
@@ -292,12 +292,13 @@ export default function PlanView({
         <rect x={0} y={0} width={lot.w} height={lot.h} className="lot-line" />
         <text x={0} y={-0.5} className="lot-label">LOT {lot.w} × {lot.h} m</text>
 
-        {below && below.rooms.map(r => <rect key={r.id} x={r.x} y={r.y} width={r.w} height={r.h} className="below" />)}
+        {below && below.rooms.map(r => <path key={r.id} d={roomOutline(r)} className="below" />)}
 
         {level.rooms.map(r => (
           <g key={r.id} className={`room ${selRoom?.id === r.id ? 'sel' : ''} ${flash === r.id ? 'flash' : ''}`}>
-            <rect x={r.x} y={r.y} width={r.w} height={r.h} style={{ fill: ROOMS[r.type]?.color }} />
-            {ROOMS[r.type]?.wet && <rect x={r.x} y={r.y} width={r.w} height={r.h} fill="url(#hatch)" className="wet" />}
+            <g className="room-fill">{roomRuns(r).map((q, i) => <rect key={i} x={q.x} y={q.y} width={q.w} height={q.h} style={{ fill: ROOMS[r.type]?.color }} />)}</g>
+            {ROOMS[r.type]?.wet && roomRuns(r).map((q, i) => <rect key={`w${i}`} x={q.x} y={q.y} width={q.w} height={q.h} fill="url(#hatch)" className="wet" />)}
+            {selRoom?.id === r.id && <path d={roomOutline(r)} className="sel-outline" />}
           </g>
         ))}
 
@@ -310,12 +311,12 @@ export default function PlanView({
           return <line key={e.key} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} className={e.exterior ? 'wall ext' : 'wall int'} />
         })}
 
-        {level.rooms.map(r => r.w >= 2 && r.h >= 2 && (
-          <g key={`t${r.id}`} className="tag" transform={`translate(${r.x + r.w / 2} ${r.y + r.h / 2})`}>
+        {level.rooms.map(r => { const lp = labelPoint(r); return roomArea(r) >= 4 && (
+          <g key={`t${r.id}`} className="tag" transform={`translate(${lp.x} ${lp.y})`}>
             <text y={-0.05} className="tag-name" style={r.w < 5 ? { fontSize: 0.36 } : undefined}>{ROOMS[r.type]?.label.toUpperCase()}</text>
             <text y={0.55} className="tag-area">{roomArea(r)} m²{r.w >= 7 ? ` · ${MATERIALS[r.floor]?.label}` : ''}</text>
           </g>
-        ))}
+        ) })}
 
         {dims && <Dim x1={dims.minX} y1={dims.minY - 1.3} x2={dims.maxX} y2={dims.minY - 1.3} />}
         {dims && <Dim x1={dims.minX - 1.3} y1={dims.minY} x2={dims.minX - 1.3} y2={dims.maxY} vertical />}
@@ -324,15 +325,15 @@ export default function PlanView({
 
         {hoverEdge && hoverEdge.dist < 0.4 && <HoverEdge k={hoverEdge.key} />}
         {gesture?.kind === 'stroke' && gesture.keys.map(k => <HoverEdge key={k} k={k} />)}
-        {mergeIds && level.rooms.filter(r => mergeIds.has(r.id)).map(r => <rect key={`m${r.id}`} x={r.x + 0.15} y={r.y + 0.15} width={r.w - 0.3} height={r.h - 0.3} className="merge-cand" />)}
+        {mergeIds && level.rooms.filter(r => mergeIds.has(r.id)).map(r => <g key={`m${r.id}`}>{roomRuns(r).map((q, i) => <rect key={i} x={q.x} y={q.y} width={q.w} height={q.h} className="merge-fill" />)}<path d={roomOutline(r)} className="merge-cand" /></g>)}
         {movingRoom && (
           <g className={`move-ghost ${moving.ok ? 'ok' : 'bad'}`} transform={`translate(${moving.dx} ${moving.dy})`}>
-            <rect x={movingRoom.x} y={movingRoom.y} width={movingRoom.w} height={movingRoom.h} style={{ fill: ROOMS[movingRoom.type]?.color }} />
-            {level.items.filter(it => !ITEMS[it.type].site && it.x >= movingRoom.x && it.x < movingRoom.x + movingRoom.w && it.y >= movingRoom.y && it.y < movingRoom.y + movingRoom.h).map(it => {
+            {roomRuns(movingRoom).map((q, i) => <rect key={i} x={q.x} y={q.y} width={q.w} height={q.h} className="ghost-fill" style={{ fill: ROOMS[movingRoom.type]?.color }} />)}
+            {level.items.filter(it => !ITEMS[it.type].site && inRoom(movingRoom, it.x, it.y)).map(it => {
               const sz = itemSize(it)
               return <g key={it.id} transform={`translate(${it.x} ${it.y})`}><ItemSymbol type={it.type} w={sz.w} h={sz.h} /></g>
             })}
-            <rect x={movingRoom.x} y={movingRoom.y} width={movingRoom.w} height={movingRoom.h} className="move-outline" />
+            <path d={roomOutline(movingRoom)} className="move-outline" />
           </g>
         )}
         {preview}

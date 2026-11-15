@@ -6,7 +6,7 @@ import { CEILINGS, DOORS, FAMILIES, INDUSTRIES, ITEMS, MATERIALS, PAINTS, QUALIT
 import { BRIEFS, TWISTS } from '../game/briefs.js'
 import { available, lockReason } from '../game/packs.js'
 import {
-  addLevel, addRoom, canPlaceItem, canPlaceRoom, duplicateLevel, itemAt, itemCells, mergeCandidates, mergeRooms, moveItem, moveRoom,
+  addLevel, addRoom, canPlaceItem, canPlaceRoom, cutRoom, duplicateLevel, extendRoom, itemAt, roomRuns, itemCells, mergeCandidates, mergeRooms, moveItem, moveRoom,
   nearestEdge, placeItem, removeItem, removeRoom, removeTopLevel, roomAt, roomArea, setOpening, toggleOpening, updateRoom,
 } from '../engine/plan.js'
 import { evaluate } from '../engine/score.js'
@@ -84,6 +84,7 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
   const [selection, setSelection] = useState(null)
   const [moving, setMoving] = useState(null)
   const [merging, setMerging] = useState(null)
+  const [shaping, setShaping] = useState(null) // { id, mode: 'extend' | 'cut' }
   const [confirmErase, setConfirmErase] = useState(null)
   const [toast, setToast] = useState(null)
   const [briefOpen, setBriefOpen] = useState(false)
@@ -120,7 +121,7 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
   const undo = () => { if (!past.length) return; feedback('undo'); setFuture(f => [project, ...f]); setProject(past[past.length - 1]); setPast(p => p.slice(0, -1)); setSelection(null); setMoving(null); setMerging(null) }
   const redo = () => { if (!future.length) return; feedback('undo'); setPast(p => [...p, project]); setProject(future[0]); setFuture(f => f.slice(1)) }
 
-  const clearModes = () => { setSelection(null); setMoving(null); setMerging(null) }
+  const clearModes = () => { setSelection(null); setMoving(null); setMerging(null); setShaping(null) }
   const stopPlacing = () => { setPlacing(null); setTool(layer === 'design' ? 'select' : 'look'); feedback('tool') }
 
   useEffect(() => {
@@ -155,11 +156,11 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
   }
 
   // ---------------------------------------------------------------- Design (2D)
-  const planTool = placing?.kind === 'room' ? 'room' : placing && layer === 'design' ? 'furnish' : tool === 'room' || tool === 'furnish' ? 'select' : tool
+  const planTool = shaping ? 'room' : placing?.kind === 'room' ? 'room' : placing && layer === 'design' ? 'furnish' : tool === 'room' || tool === 'furnish' ? 'select' : tool
   const itemType = placing?.kind === 'item' ? placing.type : null
 
   const handleTap = ({ wx, wy, x, y }) => {
-    if (moving) return
+    if (moving || shaping) return
     if (merging) {
       const r = roomAt(level, x, y)
       if (r && merging.ids.has(r.id)) {
@@ -198,6 +199,11 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
     }
   }
   const handleRect = (rect) => {
+    if (shaping) {
+      const res = (shaping.mode === 'extend' ? extendRoom : cutRoom)(project, li, shaping.id, rect)
+      commit(res, res.room ? `${ROOMS[res.room.type].label} · ${roomArea(res.room)} m²` : null, shaping.mode === 'extend' ? 'room' : 'remove')
+      return
+    }
     if (placing?.kind !== 'room') return
     commit(addRoom(project, li, rect, placing.type, floorMat), null, 'room')
   }
@@ -215,6 +221,7 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
 
   const selRoom = selection?.kind === 'room' ? level.rooms.find(r => r.id === selection.id) : null
   const selItem = selection?.kind === 'item' ? level.items.find(r => r.id === selection.id) : null
+  // While shaping, taps on the plan do nothing (drags draw the rectangle).
   const moveCheck = useMemo(() => moving ? moveRoom(project, li, moving.id, moving.dx, moving.dy) : null, [moving, project, li])
 
   const startMove = () => { feedback('tool'); setMoving({ id: selRoom.id, dx: 0, dy: 0 }) }
@@ -245,6 +252,15 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
         {moveCheck?.error && (moving.dx || moving.dy) ? <em className="bb-err">{moveCheck.error}</em> : null}
       </div>
     )
+  } else if (layer === 'design' && shaping) {
+    const r = level.rooms.find(x => x.id === shaping.id)
+    bubble = (
+      <div className="bubble-row">
+        <span>{shaping.mode === 'extend' ? 'Drag a rectangle touching the room to add it' : 'Drag across the room to carve it out'}</span>
+        <span className="mono dim">{r ? `${roomArea(r)} m²` : ''}</span>
+        <button className="bb ok" onClick={() => { feedback('tool'); setShaping(null) }}><Icon name="check" size={16} />Done</button>
+      </div>
+    )
   } else if (layer === 'design' && merging) {
     bubble = <div className="bubble-row"><span>Tap a highlighted room</span><button className="bb" onClick={() => setMerging(null)}><Icon name="x" size={16} />Cancel</button></div>
   } else if (layer === 'design' && selRoom) {
@@ -258,8 +274,12 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
           <select value={selRoom.type} aria-label="Room type" onChange={(e) => commit(updateRoom(project, li, selRoom.id, { type: e.target.value, floor: ROOMS[e.target.value].wet && !MATERIALS[selRoom.floor].wetSafe ? 'ceramic' : selRoom.floor }), null, 'select')}>
             {types.map(t => <option key={t} value={t}>{ROOMS[t].label}</option>)}
           </select>
-          <span className="mono dim">{selRoom.w}×{selRoom.h} · {roomArea(selRoom)} m²</span>
+          <span className="mono dim">{roomArea(selRoom)} m²{roomArea(selRoom) !== selRoom.w * selRoom.h ? ' · custom shape' : ` · ${selRoom.w}×${selRoom.h}`}</span>
           <button className="bb icon" onClick={() => setSelection(null)} aria-label="Close"><Icon name="x" size={16} /></button>
+        </div>
+        <div className="bubble-row">
+          <button className="bb" onClick={() => { feedback('tool'); setShaping({ id: selRoom.id, mode: 'extend' }) }}><Icon name="plus" size={16} />Extend</button>
+          <button className="bb" onClick={() => { feedback('tool'); setShaping({ id: selRoom.id, mode: 'cut' }) }}><Icon name="cut" size={16} />Cut</button>
         </div>
         <div className="bubble-row">
           <button className="bb" onClick={startMove}><Icon name="move" size={16} />Move</button>
@@ -308,7 +328,7 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
   const highlights = useMemo(() => {
     if (layer !== 'decorate') return []
     const out = []
-    if (selRoom) out.push({ ...selRoom, li })
+    if (selRoom) roomRuns(selRoom).forEach(q => out.push({ ...q, li }))
     if (selItem) { const s = itemSize(selItem); out.push({ x: selItem.x, y: selItem.y, w: s.w, h: s.h, li, ceiling: ITEMS[selItem.type].ceiling }) }
     if (hover) {
       if (placing3D) {
@@ -316,10 +336,10 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
         out.push({ ...o, w: s.w, h: s.h, li, ceiling: ITEMS[placing3D].ceiling, bad: !canPlaceItem(project, li, { type: placing3D, rot: itemRot, ...o }).ok })
       } else if (['floor', 'paint', 'ceiling', 'look'].includes(tool)) {
         const r = roomAt(level, hover.x, hover.y)
-        if (r && r.id !== selRoom?.id) out.push({ ...r, li, soft: true, ceiling: tool === 'ceiling' })
+        if (r && r.id !== selRoom?.id) roomRuns(r).forEach(q => out.push({ ...q, li, soft: true, ceiling: tool === 'ceiling' }))
       }
     }
-    if (flash) { const r = level.rooms.find(r => r.id === flash); if (r) out.push({ ...r, li, ceiling: tool === 'ceiling' }) }
+    if (flash) { const r = level.rooms.find(r => r.id === flash); if (r) roomRuns(r).forEach(q => out.push({ ...q, li, ceiling: tool === 'ceiling' })) }
     return out
   }, [layer, selection, hover, placing3D, itemRot, project, li, tool, flash]) // eslint-disable-line
 
@@ -397,7 +417,8 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
       <main className="ed-canvas">
         {layer === 'design' ? (
           <PlanView project={project} li={li} tool={moving || merging ? 'select' : planTool} itemType={itemType} itemRot={itemRot} selection={selection} flash={flash}
-            validateRect={(r) => canPlaceRoom(project, li, r)} validateItem={(it) => canPlaceItem(project, li, it)}
+            validateRect={(r) => shaping ? (() => { const e = (shaping.mode === 'extend' ? extendRoom : cutRoom)(project, li, shaping.id, r).error; return { ok: !e, error: e } })() : canPlaceRoom(project, li, r)}
+            validateItem={(it) => canPlaceItem(project, li, it)} shaping={shaping?.mode}
             onTap={handleTap} onRect={handleRect} onStroke={handleStroke} onItemDrop={handleDrop} onMoveItem={handleMove}
             moving={moving ? { ...moving, ok: !moveCheck?.error || (!moving.dx && !moving.dy) } : null} onMoveDrag={(dx, dy) => setMoving(m => m && (m.dx !== dx || m.dy !== dy) ? { ...m, dx, dy } : m)}
             mergeIds={merging?.ids} bubble={bubble} />

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { addRoom, canPlaceItem, duplicateLevel, mergeCandidates, mergeRooms, moveRoom, newProject, placeItem, removeRoom, toggleOpening, wallEdges, verticalLinks, addLevel } from '../src/engine/plan.js'
+import { addRoom, canPlaceItem, cutRoom, duplicateLevel, extendRoom, mergeCandidates, mergeRooms, moveRoom, roomArea, roomPerimeter, newProject, placeItem, removeRoom, toggleOpening, wallEdges, verticalLinks, addLevel } from '../src/engine/plan.js'
 import { evaluate } from '../src/engine/score.js'
 import { START_CASH, abandonCareer, acceptOffer, acknowledge, archiveCareer, buyPack, completeCommission, makeOffer, newCareer, newMeta, retryCommission, rng, unlocksFor } from '../src/engine/career.js'
 import { PACKS, available, makeCtx } from '../src/game/packs.js'
@@ -201,12 +201,36 @@ test('rooms: move carries contents; merge joins same-type neighbours', () => {
   q = addRoom(q, 0, { x: 4, y: 0, w: 3, h: 4 }, 'seating').project
   q = addRoom(q, 0, { x: 0, y: 4, w: 3, h: 3 }, 'seating').project
   const [a, b, c] = q.levels[0].rooms
-  assert.deepEqual(mergeCandidates(q.levels[0], a).map(r => r.id), [b.id])
-  const m = mergeRooms(q, 0, a.id, b.id)
+  assert.deepEqual(new Set(mergeCandidates(q.levels[0], a).map(r => r.id)), new Set([b.id, c.id]))
+  const m = mergeRooms(q, 0, a.id, c.id)
   assert.equal(m.project.levels[0].rooms.length, 2)
-  assert.equal(m.room.w, 7)
-  assert.ok(mergeRooms(q, 0, a.id, c.id).error)
+  assert.equal(roomArea(m.room), 16 + 9, 'L-shaped merge keeps every cell')
+  assert.equal(m.room.w, 4); assert.equal(m.room.h, 7)
   assert.ok(service)
+})
+
+test('rooms: any orthogonal shape via extend and cut; walls follow the outline', () => {
+  let p = newProject(cafeOffer())
+  p = addRoom(p, 0, { x: 0, y: 0, w: 6, h: 4 }, 'seating').project
+  const id = p.levels[0].rooms[0].id
+  let r = extendRoom(p, 0, id, { x: 0, y: 4, w: 2, h: 3 })
+  assert.ok(!r.error, r.error)
+  p = r.project
+  assert.equal(roomArea(p.levels[0].rooms[0]), 24 + 6)
+  // L shape: 6+... outline: walls count equals perimeter
+  const ext = [...wallEdges(p.levels[0]).values()].filter(e => e.exterior).length
+  assert.equal(ext, roomPerimeter(p.levels[0].rooms[0]))
+  assert.match(extendRoom(p, 0, id, { x: 10, y: 10, w: 2, h: 2 }).error, /touch/)
+  r = cutRoom(p, 0, id, { x: 2, y: 1, w: 2, h: 2 })
+  assert.ok(!r.error, 'courtyard-style notch inside is fine')
+  assert.equal(roomArea(r.project.levels[0].rooms[0]), 30 - 4)
+  assert.match(cutRoom(p, 0, id, { x: 0, y: 2, w: 6, h: 1 }).error, /split/)
+  // furniture outside the new outline is dropped by cleanup
+  let q = placeItem(p, 0, { type: 'table', x: 0, y: 5 }).project
+  q = cutRoom(q, 0, id, { x: 0, y: 4, w: 2, h: 3 }).project
+  assert.ok(!q.levels[0].items.some(i => i.type === 'table'))
+  // scoring still runs on irregular rooms
+  assert.ok(evaluate(p, cafeOffer()).overall >= 0)
 })
 
 test('family requirements accept any variant', () => {

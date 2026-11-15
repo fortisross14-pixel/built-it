@@ -1,7 +1,7 @@
 // Review engine: scores a project on Functionality, Requirements and Aesthetics.
 import { CEILINGS, DOORS, ITEMS, MATERIALS, PAINTS, ROOMS, STYLES, familyOf, q } from '../game/catalog.js'
 import { BRIEFS, GRADES, TWISTS, gradeFor, reqLabel } from '../game/briefs.js'
-import { cellOwners, ck, edgeCells, footprint, itemCells, projectCost, roomArea, verticalLinks, wallEdges } from './plan.js'
+import { cellOwners, ck, edgeCells, footprint, inRoom as inRoomCell, itemCells, projectCost, roomArea, roomAt, roomCells, verticalLinks, wallEdges } from './plan.js'
 
 const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v))
 const avg = (a) => a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0
@@ -135,7 +135,7 @@ export function daylitRooms(project) {
     if (glazed) for (const e of edges.values()) if (e.exterior) set.add(e.a)
     for (const it of level.items) {
       if (it.type !== 'skylight') continue
-      const r = level.rooms.find(r => it.x >= r.x && it.x < r.x + r.w && it.y >= r.y && it.y < r.y + r.h)
+      const r = roomAt(level, it.x, it.y)
       if (r) set.add(r.id)
     }
   })
@@ -159,7 +159,7 @@ export function evaluate(project, offer, kit = []) {
   const hasEntrance = circ.entrances.length > 0
   checklist.push({ label: 'Street entrance', ok: hasEntrance, detail: hasEntrance ? `${circ.entrances.length} door${circ.entrances.length > 1 ? 's' : ''}` : 'Add a door on an exterior wall' })
   const reached = rooms.filter(r => {
-    for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) if (circ.dist.has(`${r.li}:${x}:${y}`)) return true
+    for (const k of roomCells(r)) if (circ.dist.has(`${r.li}:${k}`)) return true
     return false
   })
   const reach = rooms.length ? reached.length / rooms.length : 0
@@ -187,7 +187,7 @@ export function evaluate(project, offer, kit = []) {
   if (brief.adj.length) note('functionality', 'Adjacencies', adj, 'The rooms that work together sit together.', 'Key rooms that work together are not connected by a door.')
 
   const crowd = avg(project.levels.flatMap(level => level.rooms.map(r => {
-    const occ = level.items.filter(it => !ITEMS[it.type].overlay && !ITEMS[it.type].walkable).reduce((s, it) => s + itemCells(it).filter(c => c.x >= r.x && c.x < r.x + r.w && c.y >= r.y && c.y < r.y + r.h).length, 0)
+    const occ = level.items.filter(it => !ITEMS[it.type].overlay && !ITEMS[it.type].walkable).reduce((s, it) => s + itemCells(it).filter(c => inRoomCell(r, c.x, c.y)).length, 0)
     return clamp(1 - Math.max(0, occ / roomArea(r) - 0.5) * 3)
   }))) || 1
   note('functionality', 'Breathing room', crowd, 'Rooms are furnished without feeling cramped.', 'Some rooms are crammed with furniture.')
@@ -211,7 +211,7 @@ export function evaluate(project, offer, kit = []) {
   }
 
   // Ceiling lighting: each room needs enough light output for its floor area.
-  const inRoom = (it, r) => it.x >= r.x && it.x < r.x + r.w && it.y >= r.y && it.y < r.y + r.h
+  const inRoom = (it, r) => inRoomCell(r, it.x, it.y)
   const lights = items.filter(it => ITEMS[it.type].ceiling)
   let litArea = 0
   project.levels.forEach((level, li) => level.rooms.forEach(r => {
@@ -310,6 +310,9 @@ export function evaluate(project, offer, kit = []) {
   const propRooms = rooms.filter(r => !ROOMS[r.type]?.circulation)
   const proportion = propRooms.length ? propRooms.reduce((s, r) => {
     const ar = Math.max(r.w, r.h) / Math.min(r.w, r.h)
+    // Irregular shapes are fine (L, T, U); only very jagged, mostly-empty outlines lose points.
+    const fill = roomArea(r) / (r.w * r.h)
+    if (fill < 0.999) return s + clamp(1 - (ar - 2.6) / 3) * clamp((fill - 0.3) / 0.3) * roomArea(r)
     return s + clamp(1 - (ar - 2.2) / 3) * roomArea(r)
   }, 0) / propRooms.reduce((s, r) => s + roomArea(r), 0) : 0
   note('aesthetics', 'Proportions', proportion, 'Rooms have handsome, usable proportions.', 'Some rooms are awkward slivers.')
