@@ -37,6 +37,9 @@ The menus use **Monograph**, a design language based on architects' presentation
 
 Project icons load from `public/art/projects/<id>.jpg`. See `ART_PROMPTS.md` for the image prompts and `scripts/slice-art.cjs` to cut a 6×4 grid into tiles.
 
+## Install as an app
+BUILT is a PWA. Open the site on a phone and use **Settings → Install BUILT**. On iPhone, use Safari's **Share → Add to Home Screen**. It runs fullscreen and works offline after the first visit, because the service worker caches the game and all its art. Icons are rendered by `scripts/make-icons.cjs`.
+
 ## Controls
 - Plan: one finger uses the tool, two fingers pan and pinch-zoom. Mouse: wheel zooms, right-drag pans.
 - 3D: drag to orbit, pinch to zoom.

@@ -52,5 +52,10 @@ const PRESETS = {
   fs.mkdirSync(dir, { recursive: true })
   preset.names.forEach((n, i) => fs.writeFileSync(path.join(dir, `${n}.jpg`), Buffer.from(tiles[i], 'base64')))
   console.log(`wrote ${preset.names.length} tiles to ${dir}`)
+  // Keep the offline art list for the service worker in sync.
+  const artRoot = path.join(__dirname, '..', 'public', 'art')
+  const list = fs.readdirSync(artRoot).filter(d => fs.statSync(path.join(artRoot, d)).isDirectory())
+    .flatMap(d => fs.readdirSync(path.join(artRoot, d)).filter(f => f.endsWith('.jpg')).map(f => `art/${d}/${f}`)).sort()
+  fs.writeFileSync(path.join(artRoot, 'manifest.json'), JSON.stringify(list))
   await browser.close()
 })()

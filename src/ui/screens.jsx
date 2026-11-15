@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { feedback, onSettings, setSetting, settings as fxSettings } from './fx.js'
+import { canPrompt, isIOS, isStandalone, onInstallChange, promptInstall } from './install.js'
 import Icon from './icons.jsx'
 import View3D from './View3D.jsx'
 import { ItemSymbol } from './PlanView.jsx'
@@ -30,6 +31,10 @@ export function SettingsButton() {
   const [open, setOpen] = useState(false)
   const [s, setS] = useState(fxSettings)
   useEffect(() => onSettings(setS), [])
+  const [, bump] = useState(0)
+  useEffect(() => onInstallChange(() => bump(n => n + 1)), [])
+  const [iosHelp, setIosHelp] = useState(false)
+  const installed = isStandalone()
   const rows = [
     ['sound', 'Sound', 'Clicks, stamps and fanfares'],
     ['haptics', 'Haptics', 'Vibration on supported phones'],
@@ -49,6 +54,14 @@ export function SettingsButton() {
                 </button>
               ))}
             </div>
+            {!installed && (canPrompt() || isIOS()) && (
+              <div className="install-row">
+                <span><b>Install BUILT</b><small>Play fullscreen from your home screen, even offline.</small></span>
+                <button className="ghost small" onClick={async () => { feedback('select'); if (canPrompt()) await promptInstall(); else setIosHelp(h => !h) }}><Icon name="plus" size={16} />Install</button>
+                {iosHelp && <p className="dim small ios-help">On iPhone or iPad: tap <b>Share</b> in Safari's toolbar, then <b>Add to Home Screen</b>.</p>}
+              </div>
+            )}
+            {installed && <p className="dim small">Installed as an app. Your progress is saved on this device.</p>}
             <div className="row end"><button className="primary" onClick={() => setOpen(false)} autoFocus>Done</button></div>
           </div>
         </div>

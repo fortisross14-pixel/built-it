@@ -1182,3 +1182,10 @@ h3.title-pair { font-size: 19px; margin: 0; letter-spacing: -.01em; }
 .avatar { aspect-ratio: 1; }
 .avatar img { position: absolute; inset: 0; }
 .diamond-in .project-art img { -webkit-mask-image: radial-gradient(circle at 50% 50%, #000 58%, transparent 71%); mask-image: radial-gradient(circle at 50% 50%, #000 58%, transparent 71%); }
+
+.install-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; padding: 12px 14px; border-radius: 14px; background: var(--panel2); }
+.install-row > span { display: grid; gap: 2px; }
+.install-row small { color: var(--dim); font-size: 12px; }
+.ios-help { flex-basis: 100%; }
+/* Installed app: no browser chrome, so keep content clear of the status bar */
+@media (display-mode: standalone) { body { overscroll-behavior-y: none; } }
