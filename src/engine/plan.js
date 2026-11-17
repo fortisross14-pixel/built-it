@@ -1,7 +1,7 @@
 // Plan model: rooms are axis-aligned rectangles on a 1 m grid, per level.
 // Walls are derived from room perimeters; doors and windows live on wall edges.
 // Edge keys: "h:x:y" = top edge of cell (x,y); "v:x:y" = left edge of cell (x,y).
-import { BASE_COST, CEILINGS, DOORS, ITEMS, MATERIALS, ROOFS, ROOMS, itemCost, itemSize, q } from '../game/catalog.js'
+import { BASE_COST, CEILINGS, DOORS, ITEMS, MATERIALS, ROOFS, ROOMS, WINDOWS, itemCost, itemSize, q } from '../game/catalog.js'
 
 let counter = 0
 export function uid(prefix = 'id') {
@@ -524,7 +524,7 @@ export function projectCost(project, kit = []) {
     }
     if (li === 0) { const edges = wallEdges(level); for (const k of level.doors) if (edges.get(k)?.exterior) openings += DOORS[project.door]?.cost || 0 }
     for (const it of level.items) items += itemCost(it)
-    openings += level.doors.length * BASE_COST.door + level.windows.length * BASE_COST.window
+    openings += level.doors.length * BASE_COST.door + level.windows.length * BASE_COST.window * (WINDOWS[project.windows]?.cost || 1)
     for (const e of wallEdges(level).values()) if (e.exterior) facade += facadeRate
   })
   finishes += paint

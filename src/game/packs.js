@@ -1,6 +1,6 @@
 // Supplier catalogue: packs bought with cash earned from fees. They unlock for the current
 // architect only. Permanent unlocks come from grades (see unlocks in career.js).
-import { CEILINGS, DOORS, INDUSTRIES, ITEMS, MATERIALS, PAINTS } from './catalog.js'
+import { CEILINGS, DOORS, INDUSTRIES, ITEMS, MATERIALS, PAINTS, ROOFS, WINDOWS } from './catalog.js'
 import { profileById } from './architects.js'
 
 export const PACKS = {
@@ -14,6 +14,7 @@ export const PACKS = {
   ambient:     { name: 'Ambient lighting',     kind: 'Lighting',  price: 2500, text: 'Pendants and track lights.' },
   statement:   { name: 'Statement lighting',   kind: 'Lighting',  price: 6000, text: 'Chandeliers and linear pendants.' },
   ceilings:    { name: 'Ceiling finishes',     kind: 'Ceiling',   price: 4000, text: 'Timber slats, coffered plaster, exposed services.' },
+  windows:     { name: 'Window joinery',       kind: 'Windows',   price: 4000, text: 'Timber sash, steel crittall and floor-to-ceiling windows.' },
   entrances:   { name: 'Entrance doors',       kind: 'Doors',     price: 4500, text: 'Glazed, timber pivot and revolving entrances.' },
   botanical:   { name: 'Botanical',            kind: 'Decor',     price: 3000, text: 'Indoor palms, green walls, a heritage oak.' },
   urban:       { name: 'Urban landscape',      kind: 'Decor',     price: 3000, text: 'Planters, bike racks and a reflecting pool.' },
@@ -29,7 +30,7 @@ export const PACKS = {
 export function packContents(id) {
   const out = []
   for (const [k, v] of Object.entries(ITEMS)) if (v.pack === id) out.push(v.label)
-  for (const src of [MATERIALS, PAINTS, CEILINGS, DOORS]) for (const v of Object.values(src)) if (v.pack === id) out.push(v.label)
+  for (const src of [MATERIALS, PAINTS, CEILINGS, DOORS, WINDOWS, ROOFS]) for (const v of Object.values(src)) if (v.pack === id) out.push(v.label)
   return out
 }
 

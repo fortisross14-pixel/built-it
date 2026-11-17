@@ -5,7 +5,7 @@
 // retry the same brief (costs a strike) or abandon the career.
 // Permanent unlocks: B / A / S on an industry unlocks that industry's items of that grade or lower.
 // Cash: every passed project pays a fee; spend it on supplier packs for this architect only.
-import { BRIEFS, GRADES, GRADE_RANK, TWISTS, estimateBudget, gradeFor } from '../game/briefs.js'
+import { BRIEFS, GRADES, GRADE_RANK, TWISTS, estimateBudget, gradeFor, gradeOf } from '../game/briefs.js'
 import { ITEMS, MATERIALS, PRODUCTS, STYLES } from '../game/catalog.js'
 import { PACKS } from '../game/packs.js'
 import { EXPERTISE, PROFILES, profileById } from '../game/architects.js'
@@ -149,7 +149,7 @@ export function repGain(score, level) {
 
 export function completeCommission(meta, career, result, thumb) {
   const { offer, project } = career.current
-  const grade = gradeFor(result.overall)
+  const grade = gradeOf(result)
   const scores = { functionality: result.functionality, requirements: result.requirements, aesthetics: result.aesthetics, budget: result.budget ?? 0, overall: result.overall }
   if (grade.id === 'F') {
     const strikes = career.strikes + 1

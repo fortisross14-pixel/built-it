@@ -1,6 +1,6 @@
 // Review engine: scores a project on Functionality, Requirements and Aesthetics.
-import { CEILINGS, COMPLEMENTS, DOORS, ITEMS, MATERIALS, PAINTS, ROOFS, ROOMS, STYLES, defaultProduct, familyOf, itemSize, productDef, q } from '../game/catalog.js'
-import { BRIEFS, GRADES, TWISTS, checksFor, featuresFor, gradeFor, reqLabel } from '../game/briefs.js'
+import { CEILINGS, COMPLEMENTS, DOORS, ITEMS, MATERIALS, PAINTS, ROOFS, ROOMS, WINDOWS, STYLES, defaultProduct, familyOf, itemSize, productDef, q } from '../game/catalog.js'
+import { BRIEFS, GRADES, S_FLOOR, TWISTS, checksFor, excellenceFor, featuresFor, gradeFor, gradeOf, reqLabel } from '../game/briefs.js'
 import { bgOf } from '../game/architects.js'
 import { cellOwners, ck, edgeCells, footprint, inRoom as inRoomCell, itemCells, itemConflict, itemProblem, placeBasics, projectCost, roomArea, roomAt, roomCells, verticalLinks, wallEdges } from './plan.js'
 
@@ -281,6 +281,13 @@ export function evaluate(project, offer, kit = []) {
   const checksW = keyChecks.length ? 0.2 : 0
   let functionality = 100 * (0.25 * reach + 0.17 * access + 0.12 * distScore + (brief.adj.length ? 0.18 : 0) * adj + 0.05 * crowd + 0.05 * wet + 0.05 * lift + 0.07 * lighting + 0.06 * equipQ + merchW * merchScore + checksW * checkScore + 0.06 * placement)
   functionality /= (brief.adj.length ? 1 : 0.82) + merchW + checksW + 0.06
+  // A correct layout earns up to 82. The last 18 are excellence: expert touches for this building type.
+  const exc = excellenceFor(offer.briefId).map(e => measureExcellence(project, e, { items, keyChecks, industry: brief.industry }))
+  const excScore = exc.length ? avg(exc.map(e => e.value)) : 0
+  for (const e of exc) checklist.push({ label: e.label, ok: e.value >= 0.99, value: e.value, detail: e.detail, kind: 'excel' })
+  note('functionality', 'Excellence', excScore, 'Expert touches everywhere: this place runs beautifully.', 'It works, but an expert would do more.',
+    exc.filter(e => e.value < 0.99).map(e => `${e.label}: ${e.detail}. ${e.why}`))
+  functionality = functionality * 0.82 + 18 * excScore
   // Signature pieces: each distinct boosted item type adds once (unlocks are meant to feel good).
   const boostTypes = new Set(items.map(it => it.type).filter(t => ITEMS[t].boost))
   let boostF = [...boostTypes].reduce((s, t) => s + (ITEMS[t].boost.f || 0), 0)
@@ -290,7 +297,9 @@ export function evaluate(project, offer, kit = []) {
   const roof = ROOFS[project.roof] || ROOFS.gravel
   boostF += roof.boost?.f || 0; boostA += roof.boost?.a || 0
   boostF += Math.min(2, rooms.reduce((s, r) => s + (CEILINGS[r.ceiling]?.boost?.f || 0), 0))
-  boostF = Math.min(10, boostF); boostA = Math.min(12, boostA)
+  const win = WINDOWS[project.windows] || WINDOWS.standard
+  boostA += win.boost?.a || 0
+  boostF = Math.min(4, boostF); boostA = Math.min(8, boostA)
   functionality += boostF
   if (boostF) notes.push({ group: 'functionality', label: 'Smart pieces', value: 1, text: `Specialist equipment makes the place work better (+${boostF}).` })
   if (!hasEntrance) functionality = Math.min(functionality, 12)
@@ -333,9 +342,10 @@ export function evaluate(project, offer, kit = []) {
   const cost = projectCost(project, kit)
   const costRatio = cost.total / offer.budget
   const over = costRatio - 1
-  const budgetScore = !rooms.length ? 0 : costRatio <= 0.8 ? 1 : costRatio <= 1 ? 1 - (costRatio - 0.8) / 0.2 * 0.25 : clamp(0.75 - over * 2.5)
+  // 70% of budget is perfect · 95% ≈ 80 · on budget ≈ 68 · 10% over ≈ 55 · 25% over < 40.
+  const budgetScore = !rooms.length ? 0 : budgetCurve(costRatio)
   checklist.push({ label: 'Within budget', ok: over <= 0, detail: `${Math.round(cost.total / 1000)}k / ${Math.round(offer.budget / 1000)}k`, kind: 'budget' })
-  note('budget', 'Budget', budgetScore, costRatio <= 0.85 ? 'Came in well under budget. The client is delighted.' : over <= 0 ? 'Delivered on budget.' : 'Slightly over budget, but worth it.', `${Math.round(over * 100)}% over budget. The client's accountant is furious.`)
+  note('budget', 'Budget', budgetScore, costRatio <= 0.75 ? 'Came in far under budget. The client is delighted.' : costRatio <= 0.95 ? 'Comfortably under budget.' : over <= 0 ? 'Delivered on budget, with nothing to spare.' : 'Over budget.', `${Math.round(over * 100)}% over budget. The client's accountant is furious.`)
 
   const L = project.levels.filter(l => l.rooms.length).length
   const levelsOk = L >= brief.levels.min && L <= brief.levels.max ? 1 : clamp(L / brief.levels.min)
@@ -405,7 +415,8 @@ export function evaluate(project, offer, kit = []) {
   const ceilMatch = totalArea ? rooms.reduce((s, r) => s + ((CEILINGS[r.ceiling || 'plain']?.tags || []).some(t => offer.styles.includes(t)) ? roomArea(r) : 0), 0) / totalArea : 0
   const doorMatch = door.tags.some(t => offer.styles.includes(t)) ? 1 : 0
   const roofMatch = roof.tags.some(t => offer.styles.includes(t)) ? 1 : 0
-  const style = rooms.length ? 0.24 * (matches(project.facade) ? 1 : 0) + 0.35 * floorMatch + 0.2 * paintMatch + 0.12 * ceilMatch + 0.05 * doorMatch + 0.04 * roofMatch : 0
+  const winMatch = win.tags.some(t => offer.styles.includes(t)) ? 1 : 0
+  const style = rooms.length ? 0.22 * (matches(project.facade) ? 1 : 0) + 0.33 * floorMatch + 0.2 * paintMatch + 0.11 * ceilMatch + 0.05 * doorMatch + 0.04 * roofMatch + 0.05 * winMatch : 0
   note('aesthetics', 'Style fit', style, `Materials nail the ${offer.styles.map(s => STYLES[s].toLowerCase()).join(' / ')} brief.`, `The client wanted something ${offer.styles.map(s => STYLES[s].toLowerCase()).join(' and ')}. Materials missed it.`,
     [...(!matches(project.facade) ? [`Facade (${MATERIALS[project.facade]?.label}) isn't ${offer.styles.map(x => STYLES[x].toLowerCase()).join(' or ')}`] : []),
      ...rooms.filter(r => !(MATERIALS[r.floor]?.tags || []).some(t => offer.styles.includes(t))).slice(0, 3).map(r => `${ROOMS[r.type].label} floor (${MATERIALS[r.floor]?.label}) doesn't match the taste`),
@@ -452,7 +463,12 @@ export function evaluate(project, offer, kit = []) {
 
   const dw = twist?.daylightWeight || 1
   const parts = [[daylight, 0.2 * dw], [proportion, 0.08], [style, 0.2], [palette, 0.08], [decor, 0.1], [facadeScore, 0.1], [compact, 0.08], [finishQ, 0.1], [mood, 0.06]]
-  let aesthetics = 100 * parts.reduce((s, [v, w]) => s + v * w, 0) / parts.reduce((s, [, w]) => s + w, 0) + specialBonus
+  let aesthetics = 100 * parts.reduce((s, [v, w]) => s + v * w, 0) / parts.reduce((s, [, w]) => s + w, 0)
+  // A tasteful design earns up to 80. The last 20 are curation: premium finishes, statement pieces,
+  // curated (pack / signature / unlocked) materials, and fine windows and doors.
+  const cur = curation(project, rooms, items, door, win, roof)
+  note('aesthetics', 'Curation', cur.value, 'Premium, curated finishes and statement pieces: it looks like a magazine shoot.', 'Tasteful, but it looks like it came from the standard catalogue.', cur.detail)
+  aesthetics = aesthetics * 0.8 + 20 * cur.value + specialBonus
   if (kit.includes('renders')) aesthetics += 5
   if (bg?.aes) aesthetics += bg.aes
   if (bg?.reqForgive) requirements = 100 - (100 - requirements) * (1 - bg.reqForgive)
@@ -466,9 +482,99 @@ export function evaluate(project, offer, kit = []) {
 
   return {
     functionality, requirements, aesthetics, budget, overall,
-    grade: gradeFor(overall).id, stars: starsFor(overall), cost, notes, checklist,
+    ...(() => { const g = gradeOf({ functionality, requirements, aesthetics, budget, overall }); return { grade: g.id, stars: { S: 5, A: 4, B: 3, C: 2, F: 1 }[g.id], sGated: gradeFor(overall).id === 'S' && g.id !== 'S' } })(),
+    cost, notes, checklist,
     stats: { area: totalArea, levels: L, walk: Number(walk.toFixed(1)), daylit: hab.filter(r => lit.has(r.id)).length, habitable: hab.length },
   }
+}
+
+export function budgetCurve(r) {
+  const pts = [[0.7, 1], [0.95, 0.8], [1, 0.68], [1.1, 0.55], [1.25, 0.38], [1.6, 0]]
+  if (r <= pts[0][0]) return 1
+  for (let i = 1; i < pts.length; i++) {
+    const [x0, y0] = pts[i - 1], [x1, y1] = pts[i]
+    if (r <= x1) return y0 + (y1 - y0) * (r - x0) / (x1 - x0)
+  }
+  return 0
+}
+
+const NON_BASE = (def) => !!(def && (def.pack || def.sig || def.unlock))
+function curation(project, rooms, items, door, win, roof) {
+  const area = rooms.reduce((s, r) => s + roomArea(r), 0)
+  if (!area) return { value: 0, detail: [] }
+  const premArea = rooms.reduce((s, r) => s + (((r.floorQ ?? 1) === 2) + ((r.wallQ ?? 1) === 2)) / 2 * roomArea(r), 0) / area
+  const curated = rooms.reduce((s, r) => s + ((NON_BASE(MATERIALS[r.floor]) ? 0.5 : 0) + (NON_BASE(PAINTS[r.wall]) ? 0.3 : 0) + (NON_BASE(CEILINGS[r.ceiling]) ? 0.2 : 0)) * roomArea(r), 0) / area
+  const statement = new Set(items.filter(it => NON_BASE(ITEMS[it.type]) && (ITEMS[it.type].boost?.a || ITEMS[it.type].layer === 'decor')).map(it => it.type)).size
+  const openings = ((door.base ? 0 : 0.5) + (win.base ? 0 : 0.5))
+  const shell = (NON_BASE(MATERIALS[project.facade]) ? 0.6 : 0) + (roof.base ? 0 : 0.4)
+  const parts = [[premArea, 0.3, 'Premium-grade floors and walls', `${Math.round(premArea * 100)}% of the floor area`],
+    [curated, 0.25, 'Curated materials (supplier packs, signature finishes)', curated < 0.3 ? 'mostly standard catalogue' : 'partly'],
+    [clamp(statement / 3), 0.2, 'Statement pieces (unlocked or pack decor)', `${statement}/3`],
+    [openings, 0.15, 'Fine windows and entrance doors', `${door.label} · ${win.label}`],
+    [shell, 0.1, 'Facade and roof upgrades', `${MATERIALS[project.facade]?.label} · ${roof.label}`]]
+  return { value: parts.reduce((s, [v, w]) => s + v * w, 0), detail: parts.filter(([v]) => v < 0.99).map(([, , l, d]) => `${l}: ${d}`) }
+}
+
+// One excellence condition (see EXCELLENCE in briefs.js).
+export function measureExcellence(project, e, { items, keyChecks, industry }) {
+  const base = { id: e.id, label: e.label, why: e.why }
+  const owners = project.levels.map(cellOwners)
+  const roomOf = (it) => owners[it.li].get(ck(it.x, it.y)) || null
+  if (e.kind === 'spacing') {
+    const list = items.filter(it => e.types.includes(it.type))
+    if (list.length < 2) return { ...base, value: list.length ? 1 : 0, detail: list.length ? 'only one' : 'none placed' }
+    const ok = list.filter(a => list.every(b => b === a || b.li !== a.li || gap(a, b) >= e.gap)).length
+    return { ...base, value: ok / list.length, detail: ok === list.length ? 'all spaced' : `${list.length - ok}/${list.length} too close` }
+  }
+  if (e.kind === 'has') {
+    const n = items.filter(it => e.types.includes(it.type) && (!e.in || roomOf(it)?.type === e.in)).length
+    return { ...base, value: n ? 1 : 0, detail: n ? `${n} placed` : 'none' }
+  }
+  if (e.kind === 'outdoor') {
+    const n = items.filter(it => e.types.includes(it.type) && it.li === 0 && !roomOf(it)).length
+    return { ...base, value: clamp(n / 2), detail: n ? `${n} outside` : 'none outside' }
+  }
+  if (e.kind === 'nearDoor') {
+    const list = items.filter(it => it.type === e.item)
+    if (!list.length) return { ...base, value: 0, detail: `no ${ITEMS[e.item].label.toLowerCase()}` }
+    let best = Infinity
+    for (const it of list) {
+      const own = roomOf(it); if (!own) continue
+      for (const k of project.levels[it.li].doors) {
+        const ids = edgeCells(k).map(c => owners[it.li].get(ck(c.x, c.y)))
+        if (!ids.some(r => r?.id === own.id) || !ids.some(r => r?.type === e.room)) continue
+        const [o, xs, ys] = k.split(':'), dx = o === 'h' ? +xs + 0.5 : +xs, dy = o === 'h' ? +ys : +ys + 0.5
+        const s = itemSize(it)
+        best = Math.min(best, Math.hypot(Math.max(it.x - dx, 0, dx - (it.x + s.w)), Math.max(it.y - dy, 0, dy - (it.y + s.h))))
+      }
+    }
+    const v = best <= e.dist ? 1 : best <= e.dist * 2.5 ? 0.5 : 0
+    return { ...base, value: v, detail: Number.isFinite(best) ? `${best.toFixed(0)} m from the door` : `no door to the ${ROOMS[e.room].label.toLowerCase()}` }
+  }
+  if (e.kind === 'premium') {
+    const list = items.filter(it => e.types ? e.types.includes(it.type) : (!ITEMS[it.type].overlay && !ITEMS[it.type].site && ITEMS[it.type].group !== 'Decor'))
+    if (!list.length) return { ...base, value: 0, detail: 'none placed' }
+    const share = list.filter(it => (it.q ?? 1) === 2).length / list.length
+    return { ...base, value: clamp(share / e.share), detail: `${Math.round(share * 100)}% premium` }
+  }
+  if (e.kind === 'specialist') {
+    const types = new Set(items.filter(it => ITEMS[it.type].unlock && ITEMS[it.type].ind?.includes(industry)).map(it => it.type))
+    return { ...base, value: clamp(types.size / 2), detail: types.size ? `${types.size}/2: ${[...types].map(t => ITEMS[t].label).join(', ')}` : 'none yet (earn them with B, A, S)' }
+  }
+  if (e.kind === 'allClose') {
+    if (!keyChecks.length) return { ...base, value: 1, detail: '' }
+    const n = keyChecks.filter(k => k.value >= 0.99).length
+    return { ...base, value: n / keyChecks.length, detail: `${n}/${keyChecks.length} close` }
+  }
+  if (e.kind === 'spacious') {
+    const vals = project.levels.flatMap(level => level.rooms.filter(r => ROOMS[r.type]?.public).map(r => {
+      const occ = items.filter(it => !ITEMS[it.type].overlay && !ITEMS[it.type].walkable).reduce((s, it) => s + itemCells(it).filter(c => inRoomCell(r, c.x, c.y)).length, 0)
+      return occ / roomArea(r)
+    }))
+    const worst = vals.length ? Math.max(...vals) : 0
+    return { ...base, value: worst <= e.max ? 1 : clamp(1 - (worst - e.max) * 4), detail: `${Math.round(worst * 100)}% furnished` }
+  }
+  return { ...base, value: 1, detail: '' }
 }
 
 export function starsFor(score) {
@@ -490,7 +596,7 @@ export function critique(result, offer) {
     2: ['“We can live with it, but it is not what we asked for.”'],
     1: ['“We are going to need to talk to our lawyers.”'],
   }[result.stars][0]
-  return { head, praise, gripes, breakdown: breakdown(result, offer) }
+  return { head, praise, gripes, breakdown: breakdown(result, offer), sGated: !!result.sGated }
 }
 
 // Per-rating detail for the review screen: what earned or cost points, worst first.
@@ -501,7 +607,7 @@ export function breakdown(result, offer) {
   const c = result.cost
   const over = c.total - offer.budget
   return {
-    functionality: sort([...fromList(['check', 'conflict', 'adj', 'merch', 'light', 'building']), ...fromNotes('functionality')]),
+    functionality: sort([...fromList(['check', 'excel', 'conflict', 'adj', 'merch', 'light', 'building']), ...fromNotes('functionality')]),
     requirements: sort([...fromList(['room', 'item', 'feature']), ...fromNotes('requirements')]),
     aesthetics: sort(fromNotes('aesthetics')),
     budget: [

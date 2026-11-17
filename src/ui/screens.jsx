@@ -537,6 +537,7 @@ export function Review({ entry, career, onContinue, onRetry, onAbandon }) {
               <div><span className="num mono" aria-label={`${s.overall} out of 100`}>{count}</span><b>{grade.label}</b></div>
             </div>
             <p className="quote">{review.head}</p>
+            {review.sGated && <p className="s-gate mono">90+ overall, but S needs every rating at 85+. So close.</p>}
           </div>
         </div>
         <div className="score-bars">

@@ -32,3 +32,25 @@ export function referenceCafe(offer = cafeOffer()) {
   item('track', 11, 2); item('panel', 11, 5); item('downlight', 14, 3)
   return p
 }
+
+// Balance fixtures. A founder with only the starter catalogue, and an expert café
+// (hospitality specialist, unlocked booths, signature finishes, premium where it counts).
+export function founderCafe(offer = cafeOffer()) {
+  const p = referenceCafe(offer)
+  p.facade = 'stucco'
+  p.levels[0].rooms.forEach(r => { r.floor = ['seating', 'service'].includes(r.type) ? 'carpet' : 'ceramic'; r.wall = r.type === 'seating' ? 'cream' : 'chalk' })
+  p.levels[0].items = p.levels[0].items.map(it => ['pendant', 'track'].includes(it.type) ? { ...it, type: 'downlight' } : it)
+  return p
+}
+export function expertCafe(offer = cafeOffer()) {
+  let p = referenceCafe(offer)
+  const take = (type, x, y) => { p.levels[0].items = p.levels[0].items.filter(i => !(i.type === type && i.x === x && i.y === y)) }
+  const item = (type, x, y, extra = {}) => { p = placeItem(p, 0, { type, x, y, ...extra }).project }
+  p.door = 'glazed'; p.roof = 'terracottaRoof'
+  p.levels[0].rooms.forEach(r => { if (r.type === 'seating') Object.assign(r, { floor: 'encaustic', wall: 'zellige', ceiling: 'rattan', floorQ: 2 }) })
+  take('table', 3, 6); take('table', 6, 6)
+  item('booth', 2, 6, { q: 2 }); item('booth', 6, 6, { q: 2 })
+  p.levels[0].items.forEach(it => { if (['table', 'counter'].includes(it.type)) it.q = 2 })
+  item('table', 11, 10); item('table', 14, 10); item('sofa', 8, 3, { rot: 1 })
+  return p
+}

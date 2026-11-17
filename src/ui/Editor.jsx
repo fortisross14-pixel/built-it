@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import Icon from './icons.jsx'
 import PlanView, { ItemSymbol } from './PlanView.jsx'
 import View3D from './View3D.jsx'
-import { CEILINGS, DOORS, ROOFS, FAMILIES, INDUSTRIES, ITEMS, itemLabel, productsFor, MATERIALS, PAINTS, QUALITY, ROOMS, STYLES, familyOf, isDecorLayer, itemCost, itemSize, materialsOfKind } from '../game/catalog.js'
+import { CEILINGS, DOORS, ROOFS, WINDOWS, FAMILIES, INDUSTRIES, ITEMS, itemLabel, productsFor, MATERIALS, PAINTS, QUALITY, ROOMS, STYLES, familyOf, isDecorLayer, itemCost, itemSize, materialsOfKind } from '../game/catalog.js'
 import { BRIEFS, TWISTS } from '../game/briefs.js'
 import { available, lockReason } from '../game/packs.js'
 import {
@@ -420,6 +420,8 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
           onPick={(f) => commit({ project: { ...project, facade: f } }, `Facade: ${MATERIALS[f].label}`, 'paint')} />
         <SwatchRow label="ENTRANCE" items={swatchItems(DOORS, 'door')} value={project.door || 'standard'} ctx={ctx} styles={offer.styles} say={say}
           onPick={(d) => commit({ project: { ...project, door: d } }, `Entrances: ${DOORS[d].label}`, 'paint')} />
+        <SwatchRow label="WINDOWS" items={swatchItems(WINDOWS, 'window')} value={project.windows || 'standard'} ctx={ctx} styles={offer.styles} say={say}
+          onPick={(w) => commit({ project: { ...project, windows: w } }, `Windows: ${WINDOWS[w].label}`, 'paint')} />
         <SwatchRow label="ROOF" items={swatchItems(ROOFS, 'roof')} value={project.roof || 'gravel'} ctx={ctx} styles={offer.styles} say={say}
           onPick={(r) => commit({ project: { ...project, roof: r } }, `Roof: ${ROOFS[r].label}`, 'paint')} />
       </div>
@@ -761,6 +763,7 @@ function BriefPanel({ offer, brief, result, twist, kit, onClose }) {
   const groups = [
     ['Key checks', result.checklist.filter(c => c.kind === 'check' || c.kind === 'conflict')],
     ['Signature features', result.checklist.filter(c => c.kind === 'feature')],
+    ['Expert touches', result.checklist.filter(c => c.kind === 'excel')],
     ['Rooms', result.checklist.filter(c => c.kind === 'room')],
     ['Equipment', result.checklist.filter(c => c.kind === 'item')],
     ['Relationships', result.checklist.filter(c => c.kind === 'adj' || c.kind === 'merch')],
@@ -803,6 +806,7 @@ function BriefPanel({ offer, brief, result, twist, kit, onClose }) {
           </ul>
         </div>
       ))}
+      <p className="dim small">A correct layout earns about 80 per rating; the rest comes from expert touches, curated finishes and spending well under budget. <b>S</b> needs 90+ overall and every rating at 85+.</p>
       <p className="dim small">Graded <b>F · C · B · A · S</b> on the average of Functionality, Requirements, Aesthetics and Budget. F fails. B, A and S unlock better {INDUSTRIES[brief.industry].label.toLowerCase()} pieces for every future architect.</p>
     </div>
   )

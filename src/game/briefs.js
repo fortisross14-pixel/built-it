@@ -447,3 +447,57 @@ export function featuresFor(briefId) {
   return list.filter(f => f.kind !== 'gender' || (b.rooms.find(r => r.type === f.room)?.count || 1) >= 2)
     .map(f => ({ ...f, w: w[f.id] ?? f.w ?? 1 })).filter(f => f.w > 0)
 }
+
+// ---------------------------------------------------------------- excellence
+// The last ~18 Functionality points. These are what an expert does on top of a correct layout:
+// they mostly need unlocked pieces, premium quality or careful spacing, and rarely fit a tight budget.
+// kinds: spacing (gap between pieces) · has · nearDoor (item by the door to a room type) ·
+// premium (share at Premium) · specialist (unlocked pieces for this industry) · allClose · outdoor · spacious
+export const EXCELLENCE = {
+  food: [
+    { id: 'spacing', kind: 'spacing', types: ['table', 'bigTable', 'booth'], gap: 1, label: 'Tables comfortably spaced', why: 'Guests and waiters need at least 1 m between tables.' },
+    { id: 'pass', kind: 'nearDoor', item: 'counter', room: 'kitchen', dist: 2, label: 'Counter by the kitchen door', why: 'Plates go straight from the pass to the counter.' },
+    { id: 'lounge', kind: 'has', types: ['sofa', 'booth'], label: 'Sofas or booths', why: 'Soft seating makes people stay (and order another).' },
+    { id: 'premium', kind: 'premium', types: ['table', 'bigTable', 'booth', 'sofa', 'counter'], share: 0.6, label: 'Premium seating and counter', why: 'Wobbly tables and cheap chairs cost repeat visits.' },
+    { id: 'outdoor', kind: 'outdoor', types: ['table', 'bigTable'], label: 'Outdoor tables', why: 'A terrace doubles the seats on a sunny day.' },
+    { id: 'special', kind: 'specialist', label: 'Specialist pieces', why: 'Unlocked equipment (booths, wood-fired oven…) is what pros use.' },
+    { id: 'routes', kind: 'allClose', label: 'Every key route Close', why: 'No route in the brief should be more than a few steps.' },
+  ],
+  fashion: [
+    { id: 'spacing', kind: 'spacing', types: ['rack', 'display', 'miniDisplay', 'shoeWall'], gap: 1, label: 'Clear aisles between fixtures', why: 'Shoppers with bags need 1 m between fixtures.' },
+    { id: 'mirror', kind: 'has', types: ['mirror'], in: 'fitting', label: 'Mirrors in the fitting rooms', why: 'No mirror, no sale.' },
+    { id: 'lounge', kind: 'has', types: ['sofa'], label: 'A sofa for companions', why: 'Somebody is always waiting for someone.' },
+    { id: 'premium', kind: 'premium', types: ['rack', 'display', 'miniDisplay', 'checkout'], share: 0.6, label: 'Premium fixtures', why: 'Cheap rails make the clothes look cheap.' },
+    { id: 'special', kind: 'specialist', label: 'Specialist pieces', why: 'Shoe walls, jewellery cases and salons sell more.' },
+    { id: 'routes', kind: 'allClose', label: 'Every key route Close', why: 'Fitting rooms and tills should be a few steps away.' },
+  ],
+  grocery: [
+    { id: 'spacing', kind: 'spacing', types: ['aisle', 'chiller'], gap: 2, label: 'Trolley-wide aisles', why: 'Two trolleys need 2 m to pass.' },
+    { id: 'premium', kind: 'premium', types: ['chiller', 'checkout'], share: 0.6, label: 'Premium chillers and tills', why: 'Efficient chillers keep produce fresh and bills low.' },
+    { id: 'special', kind: 'specialist', label: 'Specialist pieces', why: 'Drinks chillers, bakery and deli bring daily customers.' },
+    { id: 'spacious', kind: 'spacious', max: 0.4, label: 'Generous circulation', why: 'Shop floors under 40% furnished feel easy to shop.' },
+    { id: 'routes', kind: 'allClose', label: 'Every key route Close', why: 'Stock and tills should be a few steps away.' },
+  ],
+  default: [
+    { id: 'premium', kind: 'premium', types: null, share: 0.6, label: 'Premium furniture and equipment', why: 'Premium pieces last and work better.' },
+    { id: 'lounge', kind: 'has', types: ['sofa', 'bench', 'readingNook'], label: 'Places to sit and wait', why: 'People always end up waiting somewhere.' },
+    { id: 'special', kind: 'specialist', label: 'Specialist pieces', why: 'Unlocked specialist equipment is what pros use.' },
+    { id: 'spacious', kind: 'spacious', max: 0.4, label: 'Generous circulation', why: 'Rooms under 40% furnished work smoothly.' },
+    { id: 'routes', kind: 'allClose', label: 'Every key route Close', why: 'No route in the brief should be more than a few steps.' },
+  ],
+}
+export function excellenceFor(briefId) {
+  const b = BRIEFS[briefId]
+  const list = EXCELLENCE[b?.industry] || EXCELLENCE.default
+  // Outdoor tables only count where the brief has a dining room; mirrors only with fitting rooms.
+  return list.filter(e => !(e.kind === 'has' && e.in && !b.rooms.some(r => r.type === e.in)))
+}
+
+// S needs a great overall score AND no weak rating.
+export const S_FLOOR = 85
+export function gradeOf(result) {
+  const g = gradeFor(result.overall)
+  if (g.id !== 'S') return g
+  const min = Math.min(result.functionality, result.requirements, result.aesthetics, result.budget ?? 100)
+  return min >= S_FLOOR ? g : GRADES.find(x => x.id === 'A')
+}

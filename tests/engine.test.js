@@ -118,7 +118,7 @@ test('wrong style lowers aesthetics; over budget lowers requirements', () => {
   const offer = cafeOffer()
   const base = evaluate(referenceCafe(offer), offer)
   const offStyle = evaluate(referenceCafe(offer), { ...offer, styles: ['corporate', 'luxe'] })
-  assert.ok(offStyle.aesthetics < base.aesthetics - 15)
+  assert.ok(offStyle.aesthetics < base.aesthetics - 10)
   const poor = evaluate(referenceCafe(offer), { ...offer, budget: 100000 })
   assert.ok(poor.budget < base.budget - 40)
 })
@@ -392,4 +392,31 @@ test('free placement: overlaps and bad spots are allowed but red until moved', (
   assert.ok(off.x + 2 <= 18 && off.y < 14, 'items are kept on the lot')
   const toilet = placeItem(p, 0, { type: 'toilet', x: 12, y: 10 })
   assert.ok(toilet.conflict && /outside/.test(toilet.problem), 'indoor-only items outside are red, not refused')
+})
+
+test('balance: S is for experts — founders top out at A, experts need a lean, complete run', async () => {
+  const { founderCafe, expertCafe } = await import('../src/game/demo.js')
+  const offer = cafeOffer()
+  const founder = evaluate(founderCafe(offer), offer, ['bg:base'])
+  assert.ok(founder.overall < 88 && founder.grade !== 'S', `founder ${founder.overall}`)
+  // A founder going premium everywhere still can't: the budget gives way.
+  const lux = founderCafe(offer); lux.levels[0].rooms.forEach(r => { r.floorQ = 2; r.wallQ = 2 }); lux.levels[0].items.forEach(i => { i.q = 2 })
+  assert.notEqual(evaluate(lux, offer, ['bg:base']).grade, 'S')
+  // Expert hospitality developer + contractor: every rating high...
+  const kit = ['bg:business', 'exp:food', 'contractor']
+  const expert = evaluate(expertCafe(offer), offer, kit)
+  assert.ok(expert.overall >= 90 && expert.functionality >= 90 && expert.aesthetics >= 88, JSON.stringify([expert.functionality, expert.aesthetics, expert.overall]))
+  // ...but S needs every rating at 85+, so it hinges on spending well under budget.
+  assert.equal(expert.grade, expert.budget >= 85 ? 'S' : 'A')
+  const roomier = { ...offer, budget: offer.budget * 1.06 }
+  assert.equal(evaluate(expertCafe(roomier), roomier, kit).grade, 'S')
+  // Without the specialist kit, the same plan is not an S.
+  assert.notEqual(evaluate(expertCafe(roomier), roomier, ['bg:base']).grade, 'S')
+})
+
+test('budget curve: 70% is perfect, on budget ≈ 68, way over collapses', async () => {
+  const { budgetCurve } = await import('../src/engine/score.js')
+  assert.equal(budgetCurve(0.7), 1)
+  assert.ok(Math.abs(budgetCurve(0.95) - 0.8) < 0.01 && Math.abs(budgetCurve(1) - 0.68) < 0.01)
+  assert.ok(budgetCurve(1.1) < 0.6 && budgetCurve(1.1) > 0.5 && budgetCurve(1.3) < 0.4)
 })

@@ -19,6 +19,11 @@ A roguelite architecture game. Start as a junior architect with a corner shop. G
    | B | ≥ 68 | +1 level |
    | C | ≥ 55 | −1 level |
    | F | < 55 | fails: retry for a strike, or abandon the career |
+   **How hard is S?** A correct, tasteful design earns about 80 in each rating. The rest is expert work:
+   - **Functionality:** expert touches for the building type, for example tables spaced 1 m apart, the counter by the kitchen door, booths or sofas, premium seating, outdoor tables, unlocked specialist pieces, and every key route Close.
+   - **Aesthetics:** curation, meaning premium-grade finishes, pack and signature materials, statement pieces, fine windows and doors, and facade and roof upgrades.
+   - **Budget:** 70% of budget scores 100, 95% about 80, exactly on budget about 68, 10% over about 55, and 25% over under 40.
+   - **S needs 90+ overall and every rating at 85+.** In practice that means a specialist profile, unlocked pieces and a lean build.
 5. **Rewards.**
    - **Permanent, for all architects:** B, A and S unlock that industry's basic, advanced and special items and product lines. Examples: boutique displays and mannequins (B), shoe walls and jewellery cases (A), a VIP salon and runway (S), or drinks chillers (B), a bakery aisle, in-store bakery and deli (A) and a juice bar (S) for grocery.
    - **This architect only:** fees earn cash for supplier packs: paints, floors, facades, lighting, ceilings, entrance doors, decor and studio services (intern, contractor, mentor, renders).

@@ -241,6 +241,14 @@ export const CEILINGS = {
   coveLit:        { label: 'Cove-lit plaster',  color: '#f3ece0', cost: 170, tags: ['luxe', 'warm'], sig: 'biz-hosp' },
 }
 
+// Window joinery (every window in the project). cost = multiplier on the window price.
+export const WINDOWS = {
+  standard: { label: 'Standard window', color: '#3b4248', cost: 1,   tags: [], base: true },
+  timber:   { label: 'Timber sash',     color: '#8a5f3c', cost: 1.4, tags: ['warm', 'heritage', 'eco'], pack: 'windows', boost: { a: 1 } },
+  steel:    { label: 'Steel crittall',  color: '#24292d', cost: 1.7, tags: ['industrial', 'heritage', 'luxe'], pack: 'windows', boost: { a: 2 } },
+  picture:  { label: 'Floor-to-ceiling',color: '#c9cdd0', cost: 2.4, tags: ['minimal', 'luxe', 'corporate'], pack: 'windows', tall: true, boost: { a: 3 } },
+}
+
 // Entrance doors (all street doors use the project's entrance style).
 export const DOORS = {
   standard: { label: 'Standard door',      color: '#2f3539', cost: 0,    tags: [], base: true },

@@ -3,7 +3,7 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
-import { CEILINGS, DOORS, ITEMS, LEVEL_HEIGHT, MATERIALS, PAINTS, ROOFS, itemSize, productDef } from '../game/catalog.js'
+import { CEILINGS, DOORS, ITEMS, LEVEL_HEIGHT, MATERIALS, PAINTS, ROOFS, WINDOWS, itemSize, productDef } from '../game/catalog.js'
 import { cellOwners, ck, roomCells, roomRuns, wallEdges } from '../engine/plan.js'
 
 const WALL_T = 0.2
@@ -398,16 +398,25 @@ export function buildModel(project, { cutLevel = null, context = true, showCeili
         if (wallH > 0.15) b.box(glass, cx, base + (0.15 + Math.min(wallH, 2.85)) / 2, cz, e.horiz ? 1 : 0.06, Math.min(wallH, 2.85) - 0.15, e.horiz ? 0.06 : 1)
         b.box(frame, e.x1, base + wallH / 2, e.y1, 0.07, wallH, 0.07)
       } else if (windows.has(e.key)) {
-        seg(0, Math.min(0.9, wallH)); seg(Math.min(wallH, 2.3), wallH)
-        if (wallH > 0.9) {
-          const gh = Math.min(wallH, 2.3) - 0.9
-          b.box(glass, cx, base + 0.9 + gh / 2, cz, e.horiz ? 0.92 : 0.05, gh, e.horiz ? 0.05 : 0.92)
-          b.box(frame, cx, base + 0.9 + gh / 2, cz, e.horiz ? 0.05 : 0.08, gh, e.horiz ? 0.08 : 0.05)
-          b.box(frame, cx, base + 0.9 + gh * 0.62, cz, e.horiz ? 0.92 : 0.07, 0.04, e.horiz ? 0.07 : 0.92)
+        const ws = WINDOWS[project.windows] || WINDOWS.standard
+        const sillH = ws.tall ? 0.08 : 0.9, headH = ws.tall ? 2.7 : 2.3
+        seg(0, Math.min(sillH, wallH)); seg(Math.min(wallH, headH), wallH)
+        if (wallH > sillH) {
+          const gh = Math.min(wallH, headH) - sillH, wf = mat(ws.color)
+          b.box(glass, cx, base + sillH + gh / 2, cz, e.horiz ? 0.92 : 0.05, gh, e.horiz ? 0.05 : 0.92)
+          // frame: standard = one mullion + transom; timber sash = chunky frame + 2 bars; steel crittall = fine grid
+          const bar = (u, horizBar, t = 0.04) => horizBar
+            ? b.box(wf, cx, base + sillH + gh * u, cz, e.horiz ? 0.92 : 0.07, t, e.horiz ? 0.07 : 0.92)
+            : b.box(wf, cx + (e.horiz ? (u - 0.5) * 0.92 : 0), base + sillH + gh / 2, cz + (e.horiz ? 0 : (u - 0.5) * 0.92), e.horiz ? t : 0.08, gh, e.horiz ? 0.08 : t)
+          const id = project.windows || 'standard'
+          if (id === 'steel') { for (const u of [0.25, 0.5, 0.75]) { bar(u, true, 0.025); bar(u, false, 0.025) } }
+          else if (id === 'timber') { bar(0.5, true, 0.07); bar(0.5, false, 0.07); for (const u of [0, 1]) bar(u, false, 0.09); bar(0.02, true, 0.09); bar(0.98, true, 0.09) }
+          else if (id === 'picture') { bar(0.5, false, 0.03) }
+          else { bar(0.5, false, 0.05); bar(0.62, true, 0.04) }
           if (e.exterior) {
             const o = out(e, WALL_T / 2 + 0.05)
-            b.box(sill, cx + o.x, base + 0.86, cz + o.z, e.horiz ? 1.08 : 0.12, 0.06, e.horiz ? 0.12 : 1.08)
-            b.box(frame, cx + o.x * 0.4, base + 0.9 + gh + 0.03, cz + o.z * 0.4, e.horiz ? 0.98 : 0.06, 0.05, e.horiz ? 0.06 : 0.98)
+            if (!ws.tall) b.box(sill, cx + o.x, base + sillH - 0.04, cz + o.z, e.horiz ? 1.08 : 0.12, 0.06, e.horiz ? 0.12 : 1.08)
+            b.box(wf, cx + o.x * 0.4, base + sillH + gh + 0.03, cz + o.z * 0.4, e.horiz ? 0.98 : 0.06, 0.05, e.horiz ? 0.06 : 0.98)
           }
         }
       } else seg(0, wallH)
