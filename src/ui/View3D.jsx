@@ -155,7 +155,7 @@ export default function View3D({
     if (s.model) disposeGroup(s.model)
     s.scene.clear()
     setupLights(s.scene, project, night, cutLevel, s.lowEnd ? 1024 : 2048)
-    s.scene.environmentIntensity = night ? 0.06 : 0.45
+    s.scene.environmentIntensity = night ? 0.06 : 0.16
     s.model = buildModel(project, { cutLevel, showCeilings })
     if (look === 'model') toModelLook(s.model)
     s.scene.add(s.model, s.overlay)

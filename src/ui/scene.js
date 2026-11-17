@@ -4,7 +4,8 @@ import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { CEILINGS, DOORS, ITEMS, LEVEL_HEIGHT, MATERIALS, PAINTS, ROOFS, WINDOWS, itemSize, productDef } from '../game/catalog.js'
-import { cellOwners, ck, roomCells, roomRuns, wallEdges } from '../engine/plan.js'
+import { cellOwners, ck, inRoom, labelPoint, roomArea, roomCells, roomRuns, wallEdges } from '../engine/plan.js'
+import { daylitRooms } from '../engine/score.js'
 
 const WALL_T = 0.2
 const WALL_H = LEVEL_HEIGHT - 0.2
@@ -27,7 +28,7 @@ class Bucket {
       const merged = mergeGeometries(geos.map(g => g.index ? g.toNonIndexed() : g), false)
       geos.forEach(g => g.dispose())
       const mesh = new THREE.Mesh(merged, m)
-      mesh.castShadow = shadow; mesh.receiveShadow = true
+      mesh.castShadow = shadow && !m.transparent; mesh.receiveShadow = true // glass lets light through
       group.add(mesh)
     }
     this.map.clear()
@@ -455,7 +456,7 @@ export function buildModel(project, { cutLevel = null, context = true, showCeili
     if (showCeilings && li === top) {
       for (const room of level.rooms) for (const r of roomRuns(room).map(q => ({ ...q, ceiling: room.ceiling }))) {
         const c = CEILINGS[r.ceiling || 'plain'] || CEILINGS.plain
-        const cm = mat(c.color, { transparent: true, opacity: 0.42, depthWrite: false })
+        const cm = mat(c.color, { transparent: true, opacity: 0.66, depthWrite: false })
         b.box(cm, r.x + r.w / 2, y0 + 0.2 + WALL_H - 0.03, r.y + r.h / 2, r.w - 0.02, 0.05, r.h - 0.02)
         const lines = mat(r.ceiling === 'slats' ? '#8a6440' : r.ceiling === 'exposed' ? '#9aa3a8' : '#d9d2c2')
         if (r.ceiling === 'slats') for (let x = r.x + 0.25; x < r.x + r.w; x += 0.5) b.box(lines, x, y0 + 0.2 + WALL_H - 0.08, r.y + r.h / 2, 0.12, 0.08, r.h - 0.1)
@@ -473,6 +474,31 @@ export function buildModel(project, { cutLevel = null, context = true, showCeili
     }
   }
   b.flush(group)
+  // In the cutaway the top level has no roof and its walls stop at 1.25 m. Invisible occluders
+  // (ceiling slab + the missing upper walls) keep the sun out, so daylight only enters through
+  // windows, skylights and doors.
+  if (cutLevel !== null && cutLevel < project.levels.length) {
+    const li = cutLevel, level = project.levels[li], y0 = li * LEVEL_HEIGHT
+    const geos = []
+    const box = (cx, cy, cz, sx, sy, sz) => { const g = new THREE.BoxGeometry(sx, sy, sz); g.translate(cx, cy, cz); geos.push(g) }
+    const sky = new Set()
+    for (const it of level.items) if (it.type === 'skylight') { const s = itemSize(it); for (let yy = it.y; yy < it.y + s.h; yy++) for (let xx = it.x; xx < it.x + s.w; xx++) sky.add(ck(xx, yy)) }
+    for (const r of level.rooms) for (const k of roomCells(r)) { if (sky.has(k)) continue; const [x, y] = k.split(':').map(Number); box(x + 0.5, y0 + LEVEL_HEIGHT + 0.1, y + 0.5, 1.001, 0.2, 1.001) }
+    const doors = new Set(level.doors), windows = new Set(level.windows)
+    const ws = WINDOWS[project.windows] || WINDOWS.standard
+    for (const e of wallEdges(level).values()) {
+      const cx = (e.x1 + e.x2) / 2, cz = (e.y1 + e.y2) / 2, base = y0 + 0.2
+      const from = doors.has(e.key) ? 2.2 : windows.has(e.key) ? (ws.tall ? 2.7 : 2.3) : 1.25
+      if (from < WALL_H) box(cx, base + (from + WALL_H) / 2, cz, e.horiz ? 1 : WALL_T, WALL_H - from, e.horiz ? WALL_T : 1)
+      if (windows.has(e.key) && !ws.tall) box(cx, base + 0.9 / 2 + 0.6, cz, e.horiz ? 1 : WALL_T, 0.3, e.horiz ? WALL_T : 1) // cut-wall gap under the sill
+    }
+    if (geos.length) {
+      const m = new THREE.Mesh(mergeGeometries(geos.map(g => g.toNonIndexed()), false), new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }))
+      geos.forEach(g => g.dispose())
+      m.castShadow = true; m.receiveShadow = false; m.renderOrder = -1
+      group.add(m)
+    }
+  }
   return group
 }
 
@@ -552,8 +578,37 @@ export function disposeGroup(group, materials = false) {
 }
 
 export function setupLights(scene, project, night = false, cutLevel = null, shadowSize = 2048) {
-  scene.add(new THREE.HemisphereLight(night ? '#5a6b8c' : '#f4f7fb', night ? '#2a2620' : '#b2aa95', night ? 0.5 : 1.15))
-  const sun = new THREE.DirectionalLight(night ? '#9fb4d8' : '#fff4e2', night ? 0.35 : 2.2)
+  scene.add(new THREE.HemisphereLight(night ? '#5a6b8c' : '#f4f7fb', night ? '#2a2620' : '#b2aa95', night ? 0.5 : 0.5))
+  const sun = new THREE.DirectionalLight(night ? '#9fb4d8' : '#fff4e2', night ? 0.35 : 2.6)
+  if (!night) {
+    // Daylight inside: a soft sky glow in each room with windows (stronger with more glass),
+    // and the room's own lamps switched on where there is no daylight at all.
+    const top = cutLevel ?? project.levels.length - 1
+    const lit = daylitRooms(project)
+    const glazedFacade = MATERIALS[project.facade]?.glazed
+    let budget = 14
+    project.levels.forEach((level, li) => {
+      if (li > top) return
+      const edges = wallEdges(level)
+      for (const r of level.rooms) {
+        if (budget <= 0) return
+        const p = labelPoint(r), y = li * LEVEL_HEIGHT + 2.1
+        if (lit.has(r.id)) {
+          const n = glazedFacade ? 4 : level.windows.filter(k => edges.get(k)?.a === r.id).length + level.items.filter(it => it.type === 'skylight' && inRoom(r, it.x, it.y)).length * 2
+          const pl = new THREE.PointLight('#eef4ff', 3 + Math.min(6, n) * 2.2, Math.sqrt(roomArea(r)) * 1.6 + 3, 1.2)
+          pl.position.set(p.x, y, p.y); scene.add(pl); budget--
+        } else {
+          const lamps = level.items.filter(it => ITEMS[it.type].ceiling && inRoom(r, it.x, it.y))
+          for (const it of lamps.slice(0, 2)) {
+            if (budget <= 0) break
+            const s = itemSize(it)
+            const pl = new THREE.PointLight('#ffd49a', 3 + ITEMS[it.type].light * 0.3, 7, 1.4)
+            pl.position.set(it.x + s.w / 2, li * LEVEL_HEIGHT + 2.4, it.y + s.h / 2); scene.add(pl); budget--
+          }
+        }
+      }
+    })
+  }
   if (night) {
     // Real point lights for the brightest fixtures (capped for performance).
     const top = cutLevel ?? project.levels.length - 1
@@ -567,7 +622,7 @@ export function setupLights(scene, project, night = false, cutLevel = null, shad
     }
   }
   const span = Math.max(project.lot.w, project.lot.h) + 20
-  sun.position.set(project.lot.w / 2 - span * 0.6, span * 1.1, project.lot.h / 2 + span * 0.35)
+  sun.position.set(project.lot.w / 2 - span * 0.7, span * (night ? 1.1 : 0.62), project.lot.h / 2 + span * 0.55)
   sun.target.position.set(project.lot.w / 2, 0, project.lot.h / 2)
   sun.castShadow = true
   sun.shadow.mapSize.set(shadowSize, shadowSize)

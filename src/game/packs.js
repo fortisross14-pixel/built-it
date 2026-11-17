@@ -5,6 +5,7 @@ import { profileById } from './architects.js'
 
 export const PACKS = {
   earth:       { name: 'Earth tones',          kind: 'Paint',     price: 2500, text: 'Sage, terracotta and ochre wall paints.' },
+  bold:        { name: 'Bold colour',          kind: 'Paint',     price: 3000, text: 'Emerald, cobalt, sunflower, tomato, lilac, teal and forest walls, plus sky, clay and black ceilings.' },
   moody:       { name: 'Moody palette',        kind: 'Paint',     price: 3500, text: 'Blush, deep navy and charcoal.' },
   natural:     { name: 'Natural floors',       kind: 'Floors',    price: 3500, text: 'Oak, bamboo and polished concrete.' },
   stone:       { name: 'Stone & terrazzo',     kind: 'Floors',    price: 6000, text: 'Terrazzo, marble and glazed tile.' },
