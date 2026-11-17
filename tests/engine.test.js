@@ -408,7 +408,7 @@ test('balance: S is for experts — founders top out at A, experts need a lean, 
   assert.ok(expert.overall >= 90 && expert.functionality >= 90 && expert.aesthetics >= 88, JSON.stringify([expert.functionality, expert.aesthetics, expert.overall]))
   // ...but S needs every rating at 85+, so it hinges on spending well under budget.
   assert.equal(expert.grade, expert.budget >= 85 ? 'S' : 'A')
-  const roomier = { ...offer, budget: offer.budget * 1.06 }
+  const roomier = { ...offer, budget: Math.ceil(expert.cost.total / 0.85) } // a leaner build: 85% of budget
   assert.equal(evaluate(expertCafe(roomier), roomier, kit).grade, 'S')
   // Without the specialist kit, the same plan is not an S.
   assert.notEqual(evaluate(expertCafe(roomier), roomier, ['bg:base']).grade, 'S')
@@ -419,4 +419,37 @@ test('budget curve: 70% is perfect, on budget ≈ 68, way over collapses', async
   assert.equal(budgetCurve(0.7), 1)
   assert.ok(Math.abs(budgetCurve(0.95) - 0.8) < 0.01 && Math.abs(budgetCurve(1) - 0.68) < 0.01)
   assert.ok(budgetCurve(1.1) < 0.6 && budgetCurve(1.1) > 0.5 && budgetCurve(1.3) < 0.4)
+})
+
+test('lots: narrow lots refuse windows on shared walls; L-lots refuse building on the neighbour', async () => {
+  const { makeLot, BRIEFS } = await import('../src/game/briefs.js')
+  const narrow = { ...cafeOffer(), ...makeLot(BRIEFS.cafe, 'narrow') }
+  assert.ok(narrow.lot.w <= 12 && narrow.lot.h > narrow.lot.w * 2, 'thin and long')
+  let p = addRoom(newProject(narrow), 0, { x: 0, y: 2, w: narrow.lot.w, h: 8 }, 'seating').project
+  assert.match(toggleOpening(p, 0, 'v:0:4', 'window').error, /shared wall/)
+  assert.ok(!toggleOpening(p, 0, 'h:2:2', 'window').error, 'back wall can have windows')
+  const infill = makeLot(BRIEFS.cafe, 'infill')
+  assert.ok(infill.levels.min >= 2 && infill.lot.w <= 10)
+  const corner = { ...cafeOffer(), ...makeLot(BRIEFS.cafe, 'corner') }
+  const b = corner.lot.blocked[0]
+  assert.match(addRoom(newProject(corner), 0, { x: b.x, y: b.y, w: 3, h: 3 }, 'seating').error, /neighbour/)
+  // a wall against the neighbour's corner building is a shared wall
+  let q = addRoom(newProject(corner), 0, { x: b.x - 4, y: 0, w: 4, h: 4 }, 'seating').project
+  assert.match(toggleOpening(q, 0, `v:${b.x}:1`, 'window').error, /shared wall/)
+})
+
+test('offers: later jobs vary site and wishes; wishes are scored as requirements', async () => {
+  const offers = Array.from({ length: 40 }, (_, i) => makeOffer('bistro', rng(i + 7), 3))
+  assert.ok(new Set(offers.map(o => o.lot.kind)).size >= 3, 'several lot kinds appear')
+  assert.ok(offers.every(o => o.wishes.length >= 1))
+  assert.equal(makeOffer('cafe', rng(3), 0).lot.kind, 'standard')
+  const offer = { ...cafeOffer(), wishes: ['terrace', 'green'] }
+  const p = referenceCafe(offer)
+  const r1 = evaluate(p, offer)
+  const terrace = r1.checklist.find(c => c.kind === 'wish' && /terrace/i.test(c.label))
+  assert.ok(terrace && !terrace.ok)
+  const q = placeItem(placeItem(p, 0, { type: 'table', x: 11, y: 10 }).project, 0, { type: 'table', x: 14, y: 10 }).project
+  const r2 = evaluate(q, offer)
+  assert.ok(r2.checklist.find(c => c.kind === 'wish' && /terrace/i.test(c.label)).ok)
+  assert.ok(r2.requirements > r1.requirements)
 })

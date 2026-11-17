@@ -1,8 +1,8 @@
 // Review engine: scores a project on Functionality, Requirements and Aesthetics.
 import { CEILINGS, COMPLEMENTS, DOORS, ITEMS, MATERIALS, PAINTS, ROOFS, ROOMS, WINDOWS, STYLES, defaultProduct, familyOf, itemSize, productDef, q } from '../game/catalog.js'
-import { BRIEFS, GRADES, S_FLOOR, TWISTS, checksFor, excellenceFor, featuresFor, gradeFor, gradeOf, reqLabel } from '../game/briefs.js'
+import { BRIEFS, GRADES, S_FLOOR, TWISTS, checksFor, excellenceFor, featuresFor, gradeFor, gradeOf, levelsFor, reqLabel, wishById } from '../game/briefs.js'
 import { bgOf } from '../game/architects.js'
-import { cellOwners, ck, edgeCells, footprint, inRoom as inRoomCell, itemCells, itemConflict, itemProblem, placeBasics, projectCost, roomArea, roomAt, roomCells, verticalLinks, wallEdges } from './plan.js'
+import { cellOwners, ck, edgeCells, footprint, isPartyEdge, inRoom as inRoomCell, itemCells, itemConflict, itemProblem, placeBasics, projectCost, roomArea, roomAt, roomCells, verticalLinks, wallEdges } from './plan.js'
 
 const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v))
 const avg = (a) => a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0
@@ -151,7 +151,7 @@ export function daylitRooms(project) {
     const edges = wallEdges(level)
     const blocked = tallCells(level)
     for (const key of level.windows) { const e = edges.get(key); if (e && !windowBlocked(e, blocked)) set.add(e.a) }
-    if (glazed) for (const e of edges.values()) if (e.exterior) set.add(e.a)
+    if (glazed) for (const e of edges.values()) if (e.exterior && !isPartyEdge(project.lot, level, e.key)) set.add(e.a)
     for (const it of level.items) {
       if (it.type !== 'skylight') continue
       const r = roomAt(level, it.x, it.y)
@@ -348,8 +348,9 @@ export function evaluate(project, offer, kit = []) {
   note('budget', 'Budget', budgetScore, costRatio <= 0.75 ? 'Came in far under budget. The client is delighted.' : costRatio <= 0.95 ? 'Comfortably under budget.' : over <= 0 ? 'Delivered on budget, with nothing to spare.' : 'Over budget.', `${Math.round(over * 100)}% over budget. The client's accountant is furious.`)
 
   const L = project.levels.filter(l => l.rooms.length).length
-  const levelsOk = L >= brief.levels.min && L <= brief.levels.max ? 1 : clamp(L / brief.levels.min)
-  if (brief.levels.min > 1) checklist.push({ label: `At least ${brief.levels.min} levels`, ok: levelsOk === 1, detail: `${L} built` })
+  const lv = levelsFor(offer)
+  const levelsOk = L >= lv.min && L <= lv.max ? 1 : clamp(L / lv.min)
+  if (lv.min > 1) checklist.push({ label: `At least ${lv.min} levels`, ok: levelsOk === 1, detail: `${L} built`, kind: 'room' })
 
   const extra = []
   if (twist?.facades) {
@@ -387,6 +388,14 @@ export function evaluate(project, offer, kit = []) {
   let requirements = 100 * (0.45 * roomScore + 0.4 * itemScore + 0.15 * levelsOk)
   if (featW) requirements = requirements * 0.8 + 20 * featScore
   requirements += featBonus
+  // Client wishes for this particular offer.
+  const wishes = (offer.wishes || []).map(wishById).filter(Boolean).map(w => measureWish(project, w, { items, cost, offer, brief }))
+  for (const w of wishes) checklist.push({ label: w.label, ok: w.value >= 0.99, value: w.value, detail: w.detail, kind: 'wish' })
+  if (wishes.length) {
+    const ws = avg(wishes.map(w => w.value))
+    note('requirements', 'Client wishes', ws, 'Every special wish was granted.', "Some of the client's wishes were ignored.", wishes.filter(w => w.value < 0.99).map(w => `${w.label}: ${w.detail}. ${w.why}`))
+    requirements = requirements * (1 - 0.06 * wishes.length) + 100 * 0.06 * wishes.length * ws
+  }
   if (extra.length) requirements = requirements * (1 - 0.12 * extra.length) + 100 * 0.12 * extra.reduce((s, v) => s + v, 0)
 
   // ---------------- Aesthetics
@@ -431,7 +440,7 @@ export function evaluate(project, offer, kit = []) {
   const decor = rooms.length ? clamp(decorPts / (fp / 45 + 2)) : 0
   note('aesthetics', 'Planting & landscape', decor, 'Planting and landscape soften the building.', 'The building feels bare: add plants, trees and landscape.')
 
-  const exterior = project.levels.reduce((s, l) => s + [...wallEdges(l).values()].filter(e => e.exterior).length, 0)
+  const exterior = project.levels.reduce((s, l) => s + [...wallEdges(l).values()].filter(e => e.exterior && !isPartyEdge(project.lot, l, e.key)).length, 0)
   const winCount = project.levels.reduce((s, l) => s + l.windows.length, 0)
   const ratio = exterior ? winCount / exterior : 0
   const facadeScore = MATERIALS[project.facade]?.glazed ? 1 : clamp(ratio < 0.15 ? ratio / 0.15 : ratio <= 0.55 ? 1 : 1 - (ratio - 0.55) * 2)
@@ -577,6 +586,42 @@ export function measureExcellence(project, e, { items, keyChecks, industry }) {
   return { ...base, value: 1, detail: '' }
 }
 
+export function measureWish(project, w, { items, cost, offer, brief }) {
+  const base = { id: w.id, label: w.label, why: w.why }
+  const owners = project.levels.map(cellOwners)
+  const roomOf = (it) => owners[it.li].get(ck(it.x, it.y)) || null
+  if (w.kind === 'outdoor' || w.kind === 'spacing') return { ...measureExcellence(project, w, { items, keyChecks: [], industry: brief.industry }), ...base }
+  if (w.kind === 'has') {
+    const n = items.filter(it => w.types.includes(it.type) && (!w.product || it.product === w.product) && (!w.in || roomOf(it)?.type === w.in)).length
+    return { ...base, value: clamp(n / (w.n || 1)), detail: `${Math.min(n, w.n || 1)}/${w.n || 1}` }
+  }
+  if (w.kind === 'gender') return { ...measureFeature(project, w), ...base }
+  if (w.kind === 'split') {
+    const where = (p) => new Set(items.filter(it => it.type === w.type && (it.product || defaultProduct(it.type)) === p).map(it => roomOf(it)?.id).filter(Boolean))
+    const [a, b] = w.products.map(where)
+    if (!a.size || !b.size) return { ...base, value: 0, detail: 'needs both lines placed' }
+    const shared = [...a].some(id => b.has(id))
+    return { ...base, value: shared ? 0.3 : 1, detail: shared ? 'they share a room' : 'separate rooms' }
+  }
+  if (w.kind === 'daylight') {
+    const lit = daylitRooms(project)
+    const rs = project.levels.flatMap(l => l.rooms).filter(r => w.room ? r.type === w.room : ROOMS[r.type]?.habitable)
+    if (!rs.length) return { ...base, value: 0, detail: 'no such room' }
+    const n = rs.filter(r => lit.has(r.id)).length
+    return { ...base, value: n / rs.length, detail: `${n}/${rs.length} daylit` }
+  }
+  if (w.kind === 'roomMin') {
+    const need = Math.ceil((brief.rooms.find(r => r.type === w.room)?.min || 0) * w.grow)
+    const best = Math.max(0, ...project.levels.flatMap(l => l.rooms).filter(r => r.type === w.room).map(roomArea))
+    return { ...base, label: `${w.label} (${need} m²)`, value: clamp(best / need), detail: `${best}/${need} m²` }
+  }
+  if (w.kind === 'budgetCap') {
+    const r = cost.total / offer.budget
+    return { ...base, value: r <= w.ratio ? 1 : clamp(1 - (r - w.ratio) * 5), detail: `${Math.round(r * 100)}% spent` }
+  }
+  return { ...base, value: 1, detail: '' }
+}
+
 export function starsFor(score) {
   return { S: 5, A: 4, B: 3, C: 2, F: 1 }[gradeFor(score).id]
 }
@@ -608,7 +653,7 @@ export function breakdown(result, offer) {
   const over = c.total - offer.budget
   return {
     functionality: sort([...fromList(['check', 'excel', 'conflict', 'adj', 'merch', 'light', 'building']), ...fromNotes('functionality')]),
-    requirements: sort([...fromList(['room', 'item', 'feature']), ...fromNotes('requirements')]),
+    requirements: sort([...fromList(['room', 'item', 'feature', 'wish']), ...fromNotes('requirements')]),
     aesthetics: sort(fromNotes('aesthetics')),
     budget: [
       { label: over > 0 ? 'Over budget' : 'Within budget', value: over > 0 ? Math.max(0, 1 - over / offer.budget * 3) : 1, text: `${Math.round(c.total / 1000)}k spent of ${Math.round(offer.budget / 1000)}k`, detail: [] },

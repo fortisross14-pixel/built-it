@@ -304,14 +304,14 @@ export function briefArea(brief) {
 const familyCost = (fam) => Object.values(ITEMS).find(i => i.family === fam && !i.unlock)?.cost || 900
 
 // Budget is derived from the program so it stays sane as content changes.
-export function estimateBudget(brief) {
+export function estimateBudget(brief, levelsMin = brief.levels.min, partySides = 0) {
   const area = briefArea(brief) * 1.22
-  const levels = brief.levels.min
+  const levels = levelsMin
   const footprint = area / levels
   const perimeter = 4 * Math.sqrt(footprint) * 1.2
   let shell = 0
   for (let l = 0; l < levels; l++) shell += footprint * BASE_COST.perM2 * (1 + l * BASE_COST.levelPremium)
-  const facade = perimeter * levels * 380
+  const facade = perimeter * levels * 380 * (1 - partySides * 0.3) // shared walls need no facade
   const finishes = area * 110 + area * 4 * 3 * 12 + area * 40
   const lighting = area / 9 * 450
   // Family requirements and specific requirements overlap; count the larger of each family.
@@ -501,3 +501,168 @@ export function gradeOf(result) {
   const min = Math.min(result.functionality, result.requirements, result.aesthetics, result.budget ?? 100)
   return min >= S_FLOOR ? g : GRADES.find(x => x.id === 'A')
 }
+
+// ---------------------------------------------------------------- lots
+// Each offer gets a lot. The basics start on open lots; later jobs often come with a twist of site:
+// narrow (shared walls both sides: windows only front and back), infill (tiny, between two
+// buildings, build up), or an L-shaped corner lot where a neighbour's building takes a corner.
+export const LOT_KINDS = {
+  standard: { label: 'Open lot', text: 'A clear rectangular site.' },
+  narrow: { label: 'Narrow lot', text: 'Long and thin, with shared walls on both sides: windows only at the front and back. Skylights help.' },
+  infill: { label: 'Infill gap', text: 'A tiny gap between two buildings: shared walls both sides, so build up (2+ floors).' },
+  corner: { label: 'L-shaped lot', text: "A neighbour's building takes a corner of the site, with a shared wall along it." },
+}
+export function levelsFor(offer) {
+  return offer?.levels || BRIEFS[offer?.briefId]?.levels || { min: 1, max: 1 }
+}
+export function makeLot(brief, kind) {
+  const A = brief.lot.w * brief.lot.h
+  if (kind === 'narrow') {
+    const fp = briefArea(brief) * 1.25 / brief.levels.min
+    const w = Math.max(6, Math.min(12, Math.round(Math.sqrt(A) * 0.5)))
+    const h = Math.max(Math.round(A * 0.8 / w), Math.ceil(fp * 1.35 / w) + 3)
+    return { lot: { w, h, kind, party: ['left', 'right'] }, levels: brief.levels }
+  }
+  if (kind === 'infill') {
+    const min = Math.max(2, brief.levels.min), max = Math.max(min, brief.levels.max)
+    const fp = briefArea(brief) * 1.3 / min
+    const w = Math.max(6, Math.min(10, Math.round(Math.sqrt(fp * 0.7))))
+    const h = Math.ceil(fp / w) + 3
+    return { lot: { w, h, kind, party: ['left', 'right'] }, levels: { min, max } }
+  }
+  if (kind === 'corner') {
+    const w = Math.round(brief.lot.w * 1.2), h = Math.round(brief.lot.h * 1.2)
+    const bw = Math.round(w * 0.42), bh = Math.round(h * 0.45)
+    return { lot: { w, h, kind, blocked: [{ x: w - bw, y: 0, w: bw, h: bh, party: true }] }, levels: brief.levels }
+  }
+  return { lot: { ...brief.lot, kind: 'standard' }, levels: brief.levels }
+}
+// Which site twists suit a brief (no infill airports).
+export function lotKindsFor(brief) {
+  const out = ['standard', 'narrow', 'corner']
+  if (brief.level <= 6 && brief.levels.max <= 3) out.push('infill')
+  return out
+}
+
+// ---------------------------------------------------------------- client wishes
+// Extra, per-offer requirements so the same brief plays differently from run to run.
+// kinds: outdoor (n pieces outside) · has (n of types, optionally in a room type) · gender (room) ·
+// split (women's and men's racks in different rooms) · daylight (every room of a type daylit) ·
+// roomMin (a room type at least this big) · budgetCap (stay under a share of the budget) · spacing
+export const WISHES = {
+  food: [
+    { id: 'terrace', kind: 'outdoor', types: ['table', 'bigTable'], n: 2, label: 'A terrace: 2+ tables outside', why: 'The owner wants to catch the sunny days.' },
+    { id: 'wcPair', kind: 'gender', room: 'wc', label: "Separate women's and men's restrooms", why: 'The licence requires them.' },
+    { id: 'lightDining', kind: 'daylight', room: 'seating', label: 'Daylight in every dining room', why: 'Nobody wants to eat in a cave.' },
+    { id: 'lounge', kind: 'has', types: ['sofa'], n: 2, label: 'A lounge corner with 2 sofas', why: 'Laptop regulars spend more.' },
+    { id: 'bigKitchen', kind: 'roomMin', room: 'kitchen', grow: 1.5, label: 'A kitchen 50% bigger than the brief', why: 'The chef is planning a bigger menu.' },
+  ],
+  fashion: [
+    { id: 'fitPair', kind: 'gender', room: 'fitting', label: "Women's and men's fitting rooms", why: 'Customers asked for separate fitting rooms.' },
+    { id: 'split', kind: 'split', type: 'rack', products: ['women', 'men'], label: "Women's and men's in separate rooms", why: 'Each line gets its own space.' },
+    { id: 'sofa', kind: 'has', types: ['sofa'], n: 1, label: 'A sofa for companions', why: 'Somebody is always waiting.' },
+    { id: 'mirrors', kind: 'has', types: ['mirror'], n: 3, label: '3+ full mirrors', why: 'Mirrors sell clothes.' },
+    { id: 'kids', kind: 'has', types: ['rack'], product: 'kids', n: 2, label: "A kids' corner with 2 racks", why: 'Families are the core customers.' },
+  ],
+  grocery: [
+    { id: 'wide', kind: 'spacing', types: ['aisle', 'chiller'], gap: 2, label: 'Trolley-wide aisles (2 m)', why: 'Two trolleys must pass.' },
+    { id: 'outside', kind: 'outdoor', types: ['aisle', 'display'], n: 1, label: 'Produce displayed outside', why: 'Fruit on the pavement draws people in.' },
+    { id: 'bigStore', kind: 'roomMin', room: 'storage', grow: 1.6, label: 'Storage 60% bigger than the brief', why: 'Deliveries come twice a week.' },
+  ],
+  any: [
+    { id: 'green', kind: 'has', types: ['plant', 'tree', 'oakTree', 'planter', 'greenWall', 'palm'], n: 4, label: 'Greenery: 4+ plants or trees', why: 'The client wants it green.' },
+    { id: 'lean', kind: 'budgetCap', ratio: 0.9, label: 'Spend under 90% of the budget', why: 'The bank is nervous.' },
+    { id: 'allDaylight', kind: 'daylight', room: null, label: 'Daylight in every lived-in room', why: 'The client hates artificial light.' },
+  ],
+}
+export function wishById(id) {
+  for (const list of Object.values(WISHES)) { const w = list.find(x => x.id === id); if (w) return w }
+  return null
+}
+// Wishes that make sense for this brief (rooms they need are in its program, products exist…).
+export function wishPool(brief) {
+  const has = (t) => brief.rooms.some(r => r.type === t)
+  return [...(WISHES[brief.industry] || []), ...WISHES.any].filter(w =>
+    (w.kind !== 'gender' || has(w.room)) && (w.kind !== 'roomMin' || has(w.room)) && (w.kind !== 'daylight' || !w.room || has(w.room)))
+}
+
+// ---------------------------------------------------------------- more businesses
+Object.assign(BRIEFS, {
+  pharmacy: {
+    industry: 'health', level: 2, name: 'Neighbourhood Pharmacy',
+    blurb: 'Prescriptions, advice and a private consultation room. Calm, clean and quick.',
+    lot: { w: 16, h: 13 }, levels: { min: 1, max: 1 },
+    rooms: [{ type: 'sales', min: 30 }, { type: 'exam', min: 6 }, { type: 'storage', min: 8 }, { type: 'wc', min: 3 }],
+    items: [{ type: 'counter', in: 'sales' }, { type: 'shelving', count: 4, in: 'sales' }, { type: 'checkout' }, { type: 'desk', in: 'exam' }, { type: 'shelving', in: 'storage' }, { type: 'toilet' }],
+    adj: [['sales', 'exam'], ['sales', 'storage']],
+    styles: ['minimal', 'corporate', 'eco', 'warm'],
+    clients: ['Green Cross', 'Remedy & Co.', 'Apotheke Linde', 'Daily Dose'],
+  },
+  hairSalon: {
+    industry: 'retail', level: 2, name: 'Hair Salon',
+    blurb: 'Styling chairs with mirrors, wash basins at the back and a waiting area that feels like a lounge.',
+    lot: { w: 16, h: 12 }, levels: { min: 1, max: 1 },
+    rooms: [{ type: 'salon', min: 30 }, { type: 'waiting', min: 8 }, { type: 'storage', min: 4 }, { type: 'wc', min: 3 }],
+    items: [{ type: 'salonChair', count: 4 }, { type: 'washBasin', count: 2 }, { type: 'mirror', count: 2, in: 'salon' }, { type: 'reception' }, { type: 'sofa', in: 'waiting' }, { type: 'toilet' }],
+    adj: [['waiting', 'salon'], ['salon', 'storage']],
+    styles: ['luxe', 'playful', 'minimal', 'industrial'],
+    clients: ['Cut & Colour', 'Mane Street', 'Studio Fringe', 'The Parlour'],
+  },
+  kindergarten: {
+    industry: 'civic', level: 3, name: 'Kindergarten',
+    blurb: 'Two bright playrooms, a hall for rainy days, toilets close by and a garden to run in.',
+    lot: { w: 24, h: 18 }, levels: { min: 1, max: 1 },
+    rooms: [{ type: 'classroom', min: 24, count: 2 }, { type: 'hall', min: 30 }, { type: 'wc', min: 4, count: 2 }, { type: 'kitchen', min: 8 }, { type: 'office', min: 8 }],
+    items: [{ type: 'table', count: 4, in: 'classroom' }, { type: 'shelving', count: 2, in: 'classroom' }, { type: 'reception' }, { type: 'toilet', count: 2 }, { type: 'sink', in: 'kitchen' }, { type: 'desk', in: 'office' }, { type: 'tree', count: 2 }],
+    adj: [['classroom', 'hall'], ['classroom', 'wc']],
+    styles: ['playful', 'eco', 'warm', 'minimal'],
+    clients: ['Little Acorns', 'Sunflower Nursery', 'Kita Regenbogen', 'Tiny Steps'],
+  },
+  bank: {
+    industry: 'office', level: 4, name: 'Bank Branch',
+    blurb: 'A welcoming hall with a cash machine, private offices for advice and a secure back office.',
+    lot: { w: 22, h: 16 }, levels: { min: 1, max: 2 },
+    rooms: [{ type: 'lobby', min: 30 }, { type: 'office', min: 10, count: 3 }, { type: 'meeting', min: 12 }, { type: 'storage', min: 8 }, { type: 'wc', min: 3, count: 2 }],
+    items: [{ type: 'reception' }, { type: 'atm', count: 2 }, { type: 'sofa', in: 'lobby' }, { type: 'desk', count: 3, in: 'office' }, { type: 'table', in: 'meeting' }, { type: 'toilet', count: 2 }],
+    adj: [['lobby', 'office'], ['lobby', 'meeting']],
+    styles: ['corporate', 'luxe', 'minimal', 'heritage'],
+    clients: ['Northbank', 'Caja Azul', 'Meridian Savings', 'First Mutual'],
+  },
+  cinema: {
+    industry: 'civic', level: 5, name: 'Neighbourhood Cinema',
+    blurb: 'Two screens, a foyer with a snack bar and enough toilets for the interval rush.',
+    lot: { w: 30, h: 22 }, levels: { min: 1, max: 2 },
+    rooms: [{ type: 'lobby', min: 40 }, { type: 'auditorium', min: 60, count: 2 }, { type: 'service', min: 10 }, { type: 'wc', min: 5, count: 2 }, { type: 'storage', min: 8 }],
+    items: [{ type: 'cinemaSeats', count: 10 }, { type: 'screen', count: 2 }, { type: 'counter', in: 'service' }, { type: 'reception' }, { type: 'toilet', count: 4 }],
+    adj: [['lobby', 'auditorium'], ['lobby', 'service']],
+    styles: ['luxe', 'playful', 'heritage', 'industrial'],
+    clients: ['The Picture House', 'Odeon Ritz', 'Cine Paraíso', 'Kino 9'],
+  },
+  hotel: {
+    industry: 'housing', level: 6, name: 'Boutique Hotel',
+    blurb: 'A lobby with character, a lift, and eight rooms each with its own shower.',
+    lot: { w: 22, h: 16 }, levels: { min: 2, max: 4 }, needsLift: true,
+    rooms: [{ type: 'lobby', min: 30 }, { type: 'guestroom', min: 16, count: 8 }, { type: 'seating', min: 24 }, { type: 'kitchen', min: 10 }, { type: 'wc', min: 3 }],
+    items: [{ type: 'reception' }, { type: 'bed', count: 8 }, { type: 'shower', count: 8 }, { type: 'elevator' }, { type: 'stairs' }, { family: 'tableFam', count: 4, in: 'seating' }, { type: 'sofa', in: 'lobby' }],
+    adj: [['lobby', 'seating'], ['seating', 'kitchen']],
+    styles: ['luxe', 'heritage', 'warm', 'minimal'],
+    clients: ['Hotel Marlowe', 'Casa Lumen', 'The Wren', 'Maison Ardoise'],
+  },
+})
+CHECKS.retail.push(
+  { id: 'welcome', label: 'Reception at the door', from: 'entrance', to: 'items:reception', mode: 'min', close: 4, mid: 8, why: 'Clients are greeted on arrival.' },
+  { id: 'wash', label: 'Wash basins to the chairs', from: 'items:washBasin', to: 'items:salonChair', mode: 'avg', close: 4, mid: 8, why: 'Clients walk wet-haired to the chair.' },
+)
+CHECKS.civic.push(
+  { id: 'foyer', label: 'Foyer to the screens', from: 'room:lobby', to: 'rooms:auditorium', mode: 'avg', close: 6, mid: 12, why: 'Audiences flood in and out in minutes.' },
+  { id: 'snacks', label: 'Snack bar in the foyer', from: 'room:lobby', to: 'room:service', mode: 'min', close: 2, mid: 6, why: 'Popcorn on the way in.' },
+)
+CHECKS.housing.push(
+  { id: 'rooms', label: 'Hotel rooms from the lift', from: 'items:elevator', to: 'rooms:guestroom', mode: 'avg', close: 10, mid: 20, why: 'Guests drag suitcases to their rooms.' },
+)
+CHECKS.office.push(
+  { id: 'atm', label: 'Cash machine by the door', from: 'entrance', to: 'items:atm', mode: 'min', close: 3, mid: 8, why: 'Quick cash is the most common visit.' },
+)
+CHECKS.health.push(
+  { id: 'counter', label: 'Counter at the door', from: 'entrance', to: 'items:counter', mode: 'min', close: 5, mid: 10, why: 'Prescriptions are handed in first.' },
+)

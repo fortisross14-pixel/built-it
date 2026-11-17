@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ITEMS, MATERIALS, PRODUCTS, ROOMS, itemSize } from '../game/catalog.js'
+import { LOT_KINDS } from '../game/briefs.js'
 import { merchandise } from '../engine/score.js'
 import { settings } from './fx.js'
 import { inRoom, labelPoint, nearestEdge, normRect, roomArea, roomOutline, roomRuns, wallEdges } from '../engine/plan.js'
@@ -291,7 +292,18 @@ export default function PlanView({
         <text x={lot.w / 2} y={lot.h + 7.6} className="street-label">STREET</text>
         <rect x={0} y={0} width={lot.w} height={lot.h} fill="url(#g5)" className="lot" />
         <rect x={0} y={0} width={lot.w} height={lot.h} className="lot-line" />
-        <text x={0} y={-0.5} className="lot-label">LOT {lot.w} × {lot.h} m</text>
+        <text x={0} y={-0.5} className="lot-label">LOT {lot.w} × {lot.h} m{lot.kind && lot.kind !== 'standard' ? ` · ${LOT_KINDS[lot.kind]?.label.toUpperCase()}` : ''}</text>
+        {(lot.party || []).includes('left') && <g className="party"><rect x={-7} y={-1} width={7} height={lot.h + 1} className="neighbour" /><line x1={0} y1={0} x2={0} y2={lot.h} className="party-wall" /><text transform={`translate(-3.5 ${lot.h / 2}) rotate(-90)`} className="neighbour-label">NEIGHBOUR · SHARED WALL</text></g>}
+        {(lot.party || []).includes('right') && <g className="party"><rect x={lot.w} y={-1} width={7} height={lot.h + 1} className="neighbour" /><line x1={lot.w} y1={0} x2={lot.w} y2={lot.h} className="party-wall" /><text transform={`translate(${lot.w + 3.5} ${lot.h / 2}) rotate(90)`} className="neighbour-label">NEIGHBOUR · SHARED WALL</text></g>}
+        {(lot.party || []).includes('back') && <g className="party"><rect x={-1} y={-7} width={lot.w + 2} height={7} className="neighbour" /><line x1={0} y1={0} x2={lot.w} y2={0} className="party-wall" /></g>}
+        {(lot.blocked || []).map((bk, i) => (
+          <g key={`bk${i}`} className="party">
+            <rect x={bk.x} y={bk.y} width={bk.w} height={bk.h} className="neighbour" />
+            <rect x={bk.x} y={bk.y} width={bk.w} height={bk.h} fill="url(#hatch)" className="neighbour-hatch" />
+            {bk.party && <path d={`M${bk.x} ${bk.y}V${bk.y + bk.h}H${bk.x + bk.w}`} className="party-wall" />}
+            <text x={bk.x + bk.w / 2} y={bk.y + bk.h / 2} className="neighbour-label">NEIGHBOUR</text>
+          </g>
+        ))}
 
         {below && below.rooms.map(r => <path key={r.id} d={roomOutline(r)} className="below" />)}
 

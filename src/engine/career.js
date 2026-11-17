@@ -5,7 +5,7 @@
 // retry the same brief (costs a strike) or abandon the career.
 // Permanent unlocks: B / A / S on an industry unlocks that industry's items of that grade or lower.
 // Cash: every passed project pays a fee; spend it on supplier packs for this architect only.
-import { BRIEFS, GRADES, GRADE_RANK, TWISTS, estimateBudget, gradeFor, gradeOf } from '../game/briefs.js'
+import { BRIEFS, GRADES, GRADE_RANK, TWISTS, estimateBudget, gradeFor, gradeOf, lotKindsFor, makeLot, wishPool } from '../game/briefs.js'
 import { ITEMS, MATERIALS, PRODUCTS, STYLES } from '../game/catalog.js'
 import { PACKS } from '../game/packs.js'
 import { EXPERTISE, PROFILES, profileById } from '../game/architects.js'
@@ -59,16 +59,25 @@ export function newCareer(meta, { name, profile = {}, seed = Date.now() }) {
   return career
 }
 
+// index = commissions done so far. The first job is gentle (open lot, no wishes); later jobs get
+// site twists and client wishes more often, and tighter budgets, as the level climbs.
 export function makeOffer(briefId, r, index) {
   const brief = BRIEFS[briefId]
   const styles = shuffle(r, brief.styles).slice(0, 2)
   const twist = index > 0 && r() < 0.5 ? pick(r, Object.keys(TWISTS)) : null
-  const base = estimateBudget(brief)
-  const budget = Math.round(base * (twist ? TWISTS[twist].budget || 1 : 1) * (0.95 + r() * 0.12) / 1000) * 1000
+  const L = brief.level
+  const siteOdds = index === 0 ? 0 : L <= 2 ? 0.35 : L <= 6 ? 0.55 : 0.7
+  const kind = r() < siteOdds ? pick(r, lotKindsFor(brief).filter(k => k !== 'standard')) : 'standard'
+  const { lot, levels } = makeLot(brief, kind)
+  const nWishes = index === 0 ? 0 : L <= 3 ? 1 : L <= 7 ? 2 : 3
+  const wishes = shuffle(r, wishPool(brief)).slice(0, nWishes).map(w => w.id)
+  const base = estimateBudget(brief, levels.min, (lot.party || []).length)
+  const tight = 1 - (L - 1) * 0.012
+  const budget = Math.round(base * (twist ? TWISTS[twist].budget || 1 : 1) * (0.95 + r() * 0.12) * tight / 1000) * 1000
   return {
     id: `o${index}-${briefId}-${Math.floor(r() * 1e6).toString(36)}`,
     briefId, client: pick(r, brief.clients), styles, twist, budget,
-    lot: { ...brief.lot }, level: brief.level, industry: brief.industry,
+    lot, levels, wishes, level: brief.level, industry: brief.industry,
   }
 }
 

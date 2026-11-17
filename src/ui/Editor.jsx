@@ -3,7 +3,7 @@ import Icon from './icons.jsx'
 import PlanView, { ItemSymbol } from './PlanView.jsx'
 import View3D from './View3D.jsx'
 import { CEILINGS, DOORS, ROOFS, WINDOWS, FAMILIES, INDUSTRIES, ITEMS, itemLabel, productsFor, MATERIALS, PAINTS, QUALITY, ROOMS, STYLES, familyOf, isDecorLayer, itemCost, itemSize, materialsOfKind } from '../game/catalog.js'
-import { BRIEFS, TWISTS } from '../game/briefs.js'
+import { BRIEFS, TWISTS, levelsFor, LOT_KINDS } from '../game/briefs.js'
 import { available, lockReason } from '../game/packs.js'
 import {
   addLevel, addRoom, canPlaceItem, canPlaceRoom, cutRoom, duplicateLevel, extendRoom, itemAt, roomRuns, itemCells, mergeCandidates, mergeRooms, moveItem, moveRoom,
@@ -55,12 +55,12 @@ function decorAt(level, x, y, preferCeiling) {
 }
 
 // "This project" filter: only what belongs to this brief's industry and rooms.
-function relevantItem(id, brief) {
+function relevantItem(id, brief, lv = brief.levels) {
   const def = ITEMS[id]
   const program = new Set(brief.rooms.map(r => r.type))
   if (brief.items.some(r => r.type === id || (r.family && familyOf(id) === r.family))) return true
   if (def.ind) return def.ind.includes(brief.industry)
-  if (def.vertical) return brief.levels.max > 1
+  if (def.vertical) return lv.max > 1
   if (!def.rooms) return true
   return def.rooms.some(r => program.has(r) && !ROOMS[r].basic)
 }
@@ -98,6 +98,7 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
   const toastTimer = useRef(null)
 
   const level = project.levels[Math.min(li, project.levels.length - 1)]
+  const lv = levelsFor(offer)
   const result = useMemo(() => evaluate(project, offer, kit), [project, offer, kit])
 
   useEffect(() => { const t = setTimeout(() => onChange(project), 400); return () => clearTimeout(t) }, [project]) // eslint-disable-line
@@ -481,13 +482,13 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
           {[...project.levels.keys()].reverse().map(i => (
             <button key={i} className={`lvl ${i === li ? 'on' : ''}`} onClick={() => { setLi(i); clearModes() }}>L{i + 1}</button>
           ))}
-          {brief.levels.max > 1 && layer === 'design' && <button className="lvl add" onClick={() => setLevelMenu(m => !m)} aria-label="Levels"><Icon name="layers" size={16} /></button>}
+          {lv.max > 1 && layer === 'design' && <button className="lvl add" onClick={() => setLevelMenu(m => !m)} aria-label="Levels"><Icon name="layers" size={16} /></button>}
           {levelMenu && layer === 'design' && (
             <div className="level-menu">
-              <button onClick={() => { const r = addLevel(project, brief.levels.max); if (commit(r, null, 'room')) setLi(project.levels.length); setLevelMenu(false) }}><Icon name="plus" size={16} />Add empty level</button>
-              <button onClick={() => { const r = duplicateLevel(project, project.levels.length - 1, brief.levels.max); if (commit(r, null, 'room')) setLi(project.levels.length); setLevelMenu(false) }}><Icon name="copy" size={16} />Duplicate top level</button>
+              <button onClick={() => { const r = addLevel(project, lv.max); if (commit(r, null, 'room')) setLi(project.levels.length); setLevelMenu(false) }}><Icon name="plus" size={16} />Add empty level</button>
+              <button onClick={() => { const r = duplicateLevel(project, project.levels.length - 1, lv.max); if (commit(r, null, 'room')) setLi(project.levels.length); setLevelMenu(false) }}><Icon name="copy" size={16} />Duplicate top level</button>
               <button disabled={project.levels.length <= 1} onClick={() => { commit(removeTopLevel(project), null, 'remove'); setLevelMenu(false) }}><Icon name="trash" size={16} />Remove top level</button>
-              <p className="mono dim">{brief.levels.min === brief.levels.max ? `${brief.levels.min} level${brief.levels.min > 1 ? 's' : ''}` : `${brief.levels.min}–${brief.levels.max} levels`}</p>
+              <p className="mono dim">{lv.min === lv.max ? `${lv.min} level${lv.min > 1 ? 's' : ''}` : `${lv.min}–${lv.max} levels`}</p>
             </div>
           )}
         </div>
@@ -588,7 +589,7 @@ function CatalogSheet({ kind, brief, ctx, result, showAll, setShowAll, onPick, o
       .map(([name, ids]) => [name, ids.map(id => ({ id, room: true }))])
   } else {
     const pool = Object.keys(ITEMS).filter(id => kind === 'furnish' ? !isDecorLayer(id) : kind === 'light' ? ITEMS[id].ceiling : isDecorLayer(id) && !ITEMS[id].ceiling)
-    const shown = pool.filter(id => showAll || relevantItem(id, brief))
+    const shown = pool.filter(id => showAll || relevantItem(id, brief, levelsFor(offer)))
     const required = shown.filter(id => brief.items.some(r => r.type === id || (r.family && familyOf(id) === r.family)))
     const rest = shown.filter(id => !required.includes(id))
     const groups = {}
@@ -760,7 +761,10 @@ function ItemInspector({ item, problem, onQuality, onRotate, onDelete, onClose, 
 const GENDERED = ['wc', 'fitting', 'changing']
 
 function BriefPanel({ offer, brief, result, twist, kit, onClose }) {
+  const lv = levelsFor(offer)
+  const lk = LOT_KINDS[offer.lot.kind || 'standard']
   const groups = [
+    ['Client wishes', result.checklist.filter(c => c.kind === 'wish')],
     ['Key checks', result.checklist.filter(c => c.kind === 'check' || c.kind === 'conflict')],
     ['Signature features', result.checklist.filter(c => c.kind === 'feature')],
     ['Expert touches', result.checklist.filter(c => c.kind === 'excel')],
@@ -785,13 +789,14 @@ function BriefPanel({ offer, brief, result, twist, kit, onClose }) {
         <div><span className="mono dim">BUDGET</span><b>{money(offer.budget)}</b></div>
         <div><span className="mono dim">COST</span><b className={result.cost.total > offer.budget ? 'bad' : ''}>{money(result.cost.total)}</b></div>
         <div><span className="mono dim">LOT</span><b>{offer.lot.w} × {offer.lot.h} m</b></div>
-        <div><span className="mono dim">LEVELS</span><b>{brief.levels.min === brief.levels.max ? brief.levels.min : `${brief.levels.min}–${brief.levels.max}`}</b></div>
+        <div><span className="mono dim">LEVELS</span><b>{lv.min === lv.max ? lv.min : `${lv.min}–${lv.max}`}</b></div>
       </div>
       <div className="bp-style">
         <span className="mono dim">CLIENT TASTE</span>
         <div className="row wrap">{offer.styles.map(s => <span key={s} className="tag-chip">{STYLES[s]}</span>)}</div>
       </div>
       {twist && <div className="twist"><b>{twist.name}</b><span>{twist.text}</span></div>}
+      {offer.lot.kind && offer.lot.kind !== 'standard' && <div className="twist site"><b>{lk.label}</b><span>{lk.text}</span></div>}
       {kit.includes('intern') && (
         <div className="intern">
           <span className="mono dim">INTERN'S ESTIMATE</span>

@@ -3,7 +3,17 @@
 A roguelite architecture game. Start as a junior architect with a corner shop. Grades decide where your career goes next, and what every future architect can build with.
 
 ## Loop
-1. **Commission board.** The first job is one of three basics: Neighbourhood Boutique, Fast-food Counter or Corner Grocery. After that the board offers jobs at your level on a 1–10 ladder, a safer job one level down or a stretch job after an A or S, plus a locked teaser two levels up. The ladder covers 22 briefs in 10 industries: boutique → fast fashion → chain flagship → luxury maison, café → bistro → fine dining, corner grocery → supermarket → food hall, gym → sports hall → arena, library → school → museum → national museum, apartments, office tower, shopping centre, airport terminal.
+1. **Commission board.** The first job is one of three basics: Neighbourhood Boutique, Fast-food Counter or Corner Grocery. After that the board offers jobs at your level on a 1–10 ladder, a safer job one level down or a stretch job after an A or S, plus a locked teaser two levels up. The ladder covers 28 briefs in 10 industries: boutique → fast fashion → chain flagship → luxury maison, café → bistro → fine dining, corner grocery → supermarket → food hall, gym → sports hall → arena, library → school → museum → national museum, apartments, office tower, shopping centre, airport terminal.
+   - **Every offer is different.** After the first job, offers often come with:
+     - **A site twist:**
+       - a **narrow lot**, long and thin with shared walls on both sides, so windows only go front and back and skylights help;
+       - an **infill gap** between two buildings, tiny, so you build at least 2 floors;
+       - an **L-shaped lot**, where a neighbour's building takes a corner.
+
+       Shared walls refuse windows and doors.
+     - **Client wishes** (1 to 3, more at higher levels), for example: a terrace with outdoor tables, women's and men's restrooms or fitting rooms, women's and men's lines in separate rooms, a bigger kitchen, trolley-wide aisles, greenery, daylight everywhere, or spending under 90%. Wishes count toward Requirements.
+     - **Tighter budgets** as the level climbs.
+   - **28 briefs** including a pharmacy, a hair salon, a kindergarten, a bank branch, a neighbourhood cinema and a boutique hotel.
 2. **Design 2D.**
    - The Room and Furnish tools open a catalog. Pick one thing, place as many as you like, then press the red ✕ to stop. The catalog has a **This project / All** filter.
    - Select a room to get a bubble with **Move** (the room and everything in it), **Merge** (with a same-type neighbour) and **Erase** (asks for confirmation).

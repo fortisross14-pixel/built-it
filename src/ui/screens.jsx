@@ -5,7 +5,7 @@ import { canPrompt, isIOS, isStandalone, onInstallChange, promptInstall } from '
 import Icon from './icons.jsx'
 import View3D from './View3D.jsx'
 import { ItemSymbol } from './PlanView.jsx'
-import { BRIEFS, GRADES, TWISTS } from '../game/briefs.js'
+import { BRIEFS, GRADES, LOT_KINDS, TWISTS, levelsFor, wishById } from '../game/briefs.js'
 import { CEILINGS, INDUSTRIES, ITEMS, MATERIALS, PAINTS, ROOFS, ROOMS, STYLES } from '../game/catalog.js'
 import { PACKS, packContents } from '../game/packs.js'
 import { COMPLETE_AT, MAX_LEVEL, RANKS, feeFor, profilesEarned, randomArchitect, rankFor } from '../engine/career.js'
@@ -369,6 +369,7 @@ const TAGS = { match: ['At your level', ''], safe: ['Safer job', 'safe'], stretc
 
 function OfferSheet({ offer, meta, onClose, onAccept }) {
   const b = BRIEFS[offer.briefId]
+  const lvs = levelsFor(offer)
   const tw = offer.twist ? TWISTS[offer.twist] : null
   const [tagLabel, tagClass] = TAGS[offer.tag] || TAGS.match
   const best = meta.best?.[offer.briefId]
@@ -391,13 +392,20 @@ function OfferSheet({ offer, meta, onClose, onAccept }) {
             <div><Num n={1} /><span className="eyebrow">Budget</span><b className="display-num">{money(offer.budget, true)}</b></div>
             <div><Num n={2} /><span className="eyebrow">Fee at S</span><b className="display-num">{money(Math.round(feeFor(offer.level) * 1.6 * (tw?.fee || 1)), true)}</b></div>
             <div><Num n={3} /><span className="eyebrow">Lot</span><b className="display-num">{offer.lot.w}×{offer.lot.h}</b></div>
-            <div><Num n={4} /><span className="eyebrow">Floors</span><b className="display-num">{b.levels.min === b.levels.max ? b.levels.min : `${b.levels.min}–${b.levels.max}`}</b></div>
+            <div><Num n={4} /><span className="eyebrow">Floors</span><b className="display-num">{lvs.min === lvs.max ? lvs.min : `${lvs.min}–${lvs.max}`}</b></div>
           </div>
           {tw && <div className="twist"><b>{tw.name}</b><span>{tw.text}</span></div>}
+          {offer.lot.kind && offer.lot.kind !== 'standard' && <div className="twist site"><b>{LOT_KINDS[offer.lot.kind].label}</b><span>{LOT_KINDS[offer.lot.kind].text}</span></div>}
+          {(offer.wishes || []).length > 0 && (
+            <div className="os-program wishes">
+              <span className="eyebrow">Client wishes</span>
+              <ul>{offer.wishes.map(wishById).filter(Boolean).map(w => <li key={w.id}>{w.label}</li>)}</ul>
+            </div>
+          )}
           <div className="os-program">
             <span className="eyebrow">Program</span>
             <ul>{b.rooms.map((r, i) => <li key={i}>{r.count > 1 ? `${r.count}× ` : ''}{ROOMS[r.type].label} <em>≥ {r.min} m²</em></li>)}</ul>
-            <span className="dim small">{b.items.reduce((n, it) => n + (it.count || 1), 0)} required pieces of furniture and equipment{b.needsLift && b.levels.max > 1 ? ' · lift required' : ''}</span>
+            <span className="dim small">{b.items.reduce((n, it) => n + (it.count || 1), 0)} required pieces of furniture and equipment{b.needsLift && lvs.max > 1 ? ' · lift required' : ''}</span>
           </div>
         </div>
         <div className="ow-foot">

@@ -4,7 +4,7 @@ import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { CEILINGS, DOORS, ITEMS, LEVEL_HEIGHT, MATERIALS, PAINTS, ROOFS, WINDOWS, itemSize, productDef } from '../game/catalog.js'
-import { cellOwners, ck, inRoom, labelPoint, roomArea, roomCells, roomRuns, wallEdges } from '../engine/plan.js'
+import { cellOwners, ck, inRoom, isPartyEdge, labelPoint, roomArea, roomCells, roomRuns, wallEdges } from '../engine/plan.js'
 import { daylitRooms } from '../engine/score.js'
 
 const WALL_T = 0.2
@@ -294,6 +294,32 @@ function furniture(b, type, x, z, w, d, y0, quality = 1, product = null) {
       else for (let i = 0; i < 4; i++) { const t = 0.3 + i * (Math.max(w, d) - 0.6) / 3; const px = along ? x + t : cx, pz = along ? cz : z + t; b.box(dark, px, ceil - 0.2, pz, 0.12, 0.22, 0.12); b.box(glow(), px, ceil - 0.32, pz, 0.08, 0.02, 0.08) }
       break
     }
+    // --- services, cinema, bank
+    case 'salonChair': {
+      const back = d > w ? z + 0.25 : cz
+      b.box(dark, cx, y0 + 0.2, cz + (d > w ? 0.3 : 0), 0.3, 0.4, 0.3)
+      b.box(fabric, cx, y0 + 0.5, cz + (d > w ? 0.3 : 0), 0.6, 0.15, 0.6)
+      b.box(fabric, cx, y0 + 0.85, cz + (d > w ? 0.6 : 0), 0.6, 0.6, 0.12)
+      b.box(mat('#d6e6ee', { roughness: 0.1 }), cx, y0 + 1.3, back - 0.15, 0.7, 1.0, 0.04)
+      b.box(wood, cx, y0 + 0.8, back - 0.1, 0.8, 0.05, 0.25); break
+    }
+    case 'washBasin':
+      b.box(white, cx, y0 + 0.45, z + 0.3, w - 0.1, 0.9, 0.5); b.box(mat('#2f3539'), cx, y0 + 0.9, z + 0.3, 0.5, 0.06, 0.35)
+      b.box(fabric, cx, y0 + 0.3, z + 1.25, 0.6, 0.6, 0.9); b.box(fabric, cx, y0 + 0.75, z + 1.55, 0.6, 0.5, 0.15); break
+    case 'cinemaSeats': {
+      const along = w >= d, n = Math.round(Math.max(w, d))
+      for (let i = 0; i < n; i++) {
+        const px = along ? x + i + 0.5 : cx, pz = along ? cz : z + i + 0.5
+        b.box(mat('#8e2f3b'), px, y0 + 0.25, pz, along ? 0.8 : 0.6, 0.5, along ? 0.6 : 0.8)
+        b.box(mat('#8e2f3b'), px + (along ? 0 : 0.3), y0 + 0.7, pz + (along ? 0.3 : 0), along ? 0.8 : 0.12, 0.7, along ? 0.12 : 0.8)
+      }
+      break
+    }
+    case 'screen':
+      b.box(dark, cx, y0 + 1.7, cz, w - 0.2, 2.4, 0.2)
+      b.box(mat('#f4f3ef', { emissive: '#dfe8ff', emissiveIntensity: 0.25 }), cx, y0 + 1.7, cz + 0.11, w - 0.5, 2.1, 0.02); break
+    case 'atm':
+      b.box(steel, cx, y0 + 0.75, cz, 0.7, 1.5, 0.6); b.box(mat('#2a6fb3', { emissive: '#2a6fb3', emissiveIntensity: 0.4 }), cx, y0 + 1.2, cz + 0.31, 0.45, 0.3, 0.02); break
     default: b.box(white, cx, y0 + 0.4, cz, w - 0.15, 0.8, d - 0.15)
   }
 }
@@ -331,8 +357,18 @@ export function buildModel(project, { cutLevel = null, context = true, showCeili
     for (let x = -28; x < lot.w + 28; x += 4) b.box(mat('#e9e4d0'), x, -0.03, lot.h + 6, 2, 0.02, 0.15)
     b.box(mat('#c9c8c0'), lot.w / 2, -0.04, lot.h + 10.75, lot.w + 60, 0.16, 2.5)
     const r = seeded(lot.w * 31 + lot.h)
-    // neighbouring blocks
+    // neighbouring blocks: flush against shared walls, set back elsewhere
+    const party = lot.party || []
+    // In the cutaway, neighbours are cut at the same height as the building so you can see in.
+    const neighbourH = (h) => cutLevel === null ? h : Math.min(h, cutLevel * LEVEL_HEIGHT + 1.45)
     for (const side of [-1, 1]) {
+      if (party.includes(side < 0 ? 'left' : 'right')) {
+        const w = 8, hgt = neighbourH(LEVEL_HEIGHT * (2 + Math.floor(r() * 3)) + 0.4)
+        const x = side < 0 ? -w / 2 : lot.w + w / 2
+        b.box(mat('#d3cec4'), x, hgt / 2, lot.h / 2 - 1, w, hgt, lot.h + 2)
+        b.box(mat('#bfb9ad'), x, hgt + 0.15, lot.h / 2 - 1, w + 0.2, 0.3, lot.h + 2.2)
+        continue
+      }
       let z = 0
       while (z < lot.h) {
         const d = 6 + Math.floor(r() * 6), w = 7 + Math.floor(r() * 5), hgt = 3.4 + Math.floor(r() * 2) * 3.2
@@ -341,6 +377,12 @@ export function buildModel(project, { cutLevel = null, context = true, showCeili
         z += d + 1
       }
     }
+    for (const bk of lot.blocked || []) {
+      const hgt = neighbourH(LEVEL_HEIGHT * (2 + Math.floor(r() * 2)) + 0.4)
+      b.box(mat('#d8d2c6'), bk.x + bk.w / 2, hgt / 2, bk.y + bk.h / 2, bk.w, hgt, bk.h)
+      b.box(mat('#bfb9ad'), bk.x + bk.w / 2, hgt + 0.15, bk.y + bk.h / 2, bk.w + 0.2, 0.3, bk.h + 0.2)
+    }
+    if (party.includes('back')) { const hb = neighbourH(LEVEL_HEIGHT * 3); b.box(mat('#d3cec4'), lot.w / 2, hb / 2, -4, lot.w + 2, hb, 8) }
     for (let x = -20; x < lot.w + 20; x += 5 + Math.floor(r() * 3)) tree(b, x, lot.h + 11.2, 0, 0.9 + r() * 0.4)
     for (let x = -12; x < lot.w + 12; x += 9) streetLamp(b, x + 2, lot.h + 2.2)
     const crowd = Math.min(9, 3 + Math.floor(lot.w / 6))
@@ -394,7 +436,7 @@ export function buildModel(project, { cutLevel = null, context = true, showCeili
             b.box(sill, cx + s0.x, 0.05, cz + s0.z, e.horiz ? 1.3 : 0.6, 0.1, e.horiz ? 0.6 : 1.3)
           }
         }
-      } else if (e.exterior && glazed) {
+      } else if (e.exterior && glazed && !isPartyEdge(project.lot, level, e.key)) {
         seg(0, Math.min(0.15, wallH)); seg(Math.min(wallH, 2.85), wallH)
         if (wallH > 0.15) b.box(glass, cx, base + (0.15 + Math.min(wallH, 2.85)) / 2, cz, e.horiz ? 1 : 0.06, Math.min(wallH, 2.85) - 0.15, e.horiz ? 0.06 : 1)
         b.box(frame, e.x1, base + wallH / 2, e.y1, 0.07, wallH, 0.07)

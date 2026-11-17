@@ -11,12 +11,37 @@ export function uid(prefix = 'id') {
 
 export const ck = (x, y) => `${x}:${y}`
 
+// ---------------------------------------------------------------- lots
+// lot: { w, h, kind?, blocked?: [{x,y,w,h,party?}], party?: ['left','right','back'] }.
+// blocked = a neighbour's plot inside the bounding box (L-shaped lots); party = shared walls
+// with neighbouring buildings: no windows or doors there.
+export function lotHas(lot, x, y) {
+  if (x < 0 || y < 0 || x >= lot.w || y >= lot.h) return false
+  return !(lot.blocked || []).some(b => x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h)
+}
+export function partyCell(lot, x, y) {
+  const p = lot.party || []
+  if (x < 0 && p.includes('left')) return true
+  if (x >= lot.w && p.includes('right')) return true
+  if (y < 0 && p.includes('back')) return true
+  return (lot.blocked || []).some(b => b.party && x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h)
+}
+// An exterior wall edge that backs onto a neighbour's building.
+export function isPartyEdge(lot, level, key) {
+  const owners = cellOwners(level)
+  const out = edgeCells(key).find(c => !owners.has(ck(c.x, c.y)))
+  return !!out && partyCell(lot, out.x, out.y)
+}
+export function lotArea(lot) {
+  return lot.w * lot.h - (lot.blocked || []).reduce((s, b) => s + b.w * b.h, 0)
+}
+
 export function emptyLevel() { return { rooms: [], doors: [], windows: [], items: [] } }
 
 export function newProject(offer) {
   return {
     offerId: offer.id, briefId: offer.briefId,
-    lot: { ...offer.lot },
+    lot: structuredClone(offer.lot),
     levels: [emptyLevel()],
     facade: 'stucco',
     door: 'standard',
@@ -140,7 +165,7 @@ export function canPlaceRoom(project, li, shape, ignoreId = null) {
   const isRect = !Array.isArray(shape)
   if (isRect && (shape.w < 2 || shape.h < 2)) return { ok: false, error: 'Rooms must be at least 2 × 2 m.' }
   const cells = isRect ? rectCells(shape) : shape
-  if (cells.some(k => { const { x, y } = parse(k); return x < 0 || y < 0 || x >= lot.w || y >= lot.h })) return { ok: false, error: 'Outside the lot boundary.' }
+  if (cells.some(k => { const { x, y } = parse(k); return !lotHas(lot, x, y) })) return { ok: false, error: (lot.blocked || []).length ? "Outside the lot: the hatched area is the neighbour's." : 'Outside the lot boundary.' }
   const owners = cellOwners(project.levels[li])
   if (cells.some(k => owners.has(k) && owners.get(k).id !== ignoreId)) return { ok: false, error: 'Overlaps another room.' }
   if (li > 0) {
@@ -311,6 +336,7 @@ export function toggleOpening(project, li, key, kind) {
   if (!edge) return { project, error: 'Openings go on walls.' }
   if (kind === 'window' && !edge.exterior) return { project, error: 'Windows go on exterior walls.' }
   if (kind === 'door' && edge.exterior && li > 0) return { project, error: 'Upper floors cannot have street doors.' }
+  if (edge.exterior && isPartyEdge(project.lot, level, key)) return { project, error: "That's a shared wall with the neighbour's building: no windows or doors." }
   const p = clone(project)
   const L = p.levels[li]
   const list = kind === 'door' ? L.doors : L.windows
@@ -344,7 +370,7 @@ export function placeBasics(project, li, item) {
   const level = project.levels[li]
   const { lot } = project
   const cells = itemCells(item)
-  if (cells.some(c => c.x < 0 || c.y < 0 || c.x >= lot.w || c.y >= lot.h)) return { ok: false, error: 'Outside the lot.' }
+  if (cells.some(c => !lotHas(lot, c.x, c.y))) return { ok: false, error: 'Outside the lot.' }
   const owners = cellOwners(level)
   const rooms = new Set(cells.map(c => owners.get(ck(c.x, c.y))?.id || null))
   const room = rooms.size === 1 && !rooms.has(null) ? owners.get(ck(cells[0].x, cells[0].y)) : null
@@ -457,7 +483,8 @@ export function cleanup(p) {
   p.levels.forEach((level, li) => {
     const edges = wallEdges(level)
     level.doors = level.doors.filter(k => edges.has(k) && !(li > 0 && edges.get(k).exterior))
-    level.windows = level.windows.filter(k => edges.has(k) && edges.get(k).exterior)
+    level.windows = level.windows.filter(k => edges.has(k) && edges.get(k).exterior && !isPartyEdge(p.lot, level, k))
+    level.doors = level.doors.filter(k => !(edges.get(k).exterior && isPartyEdge(p.lot, level, k)))
     // Keep every item on the lot; ones that no longer fit (a room was erased or moved) just turn red.
     const { lot } = p
     level.items = level.items.filter(it => { const s = itemSize(it); return it.x >= 0 && it.y >= 0 && it.x + s.w <= lot.w && it.y + s.h <= lot.h })

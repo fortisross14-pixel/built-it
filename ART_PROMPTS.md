@@ -63,3 +63,20 @@ Use this style prefix for every prompt, then add the subject:
 |---|---|---|---|
 | Architect portraits (12 plaster busts) | `art-source/architects-grid.png` (6 × 2) | `node scripts/slice-art.cjs art-source/architects-grid.png architects` | `public/art/architects/a01–a12.jpg` |
 | Supplier pack boards (19) | `art-source/packs-grid.png` (5 × 4, last tile empty) | `node scripts/slice-art.cjs art-source/packs-grid.png packs` | `public/art/packs/<packId>.jpg` |
+
+
+## New tiles needed
+
+Same style as the project grid: white massing model, isometric, soft shadow, off-white background, one building per tile.
+
+**Projects** (save as `public/art/projects/<id>.jpg`):
+- `pharmacy`: a small pharmacy with a green cross sign
+- `hairSalon`: a hair salon with a striped awning
+- `kindergarten`: a kindergarten with a garden and a play frame
+- `bank`: a stone-fronted bank branch
+- `cinema`: a cinema with a marquee
+- `hotel`: a four-storey boutique hotel
+
+**Packs** (save as `public/art/packs/<id>.jpg`):
+- `bold`: colour chips (emerald, cobalt, sunflower, tomato, lilac, teal, forest)
+- `windows`: window samples (timber sash, steel crittall, floor-to-ceiling)

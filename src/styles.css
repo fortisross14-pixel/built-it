@@ -1064,7 +1064,7 @@ h3.title-pair { font-size: 19px; margin: 0; letter-spacing: -.01em; }
 .ow-facts .display-num { font-size: 26px; }
 .os-program li { background: var(--panel2); border: 0; border-radius: 999px; padding: 5px 11px; }
 .os-program li em { font-style: normal; color: var(--dim); }
-.ow-foot { display: flex; gap: 10px; justify-content: flex-end; position: sticky; bottom: -18px; background: linear-gradient(transparent, var(--panel) 30%); padding-top: 14px; }
+.ow-foot { display: flex; gap: 10px; justify-content: flex-end; position: sticky; bottom: -18px; background: linear-gradient(transparent, var(--panel) 30%); padding-top: 14px; z-index: 3; }
 .ow-foot .primary { flex: 1; max-width: 320px; }
 @media (max-width: 520px) { .ow-hero { grid-template-columns: 110px 1fr; } .ow-hero .diamond { width: 110px; } }
 .work-win .work-3d { height: min(52vh, 460px); border-radius: 18px; }
@@ -1253,3 +1253,11 @@ button.sbar svg { transition: transform .3s cubic-bezier(.2,.8,.2,1); opacity: .
 .insp-problem { display: flex; gap: 6px; align-items: flex-start; margin: 2px 0 6px; padding: 8px 10px; border-radius: 8px; background: rgba(214, 64, 52, .1); color: #a3291f; font-size: 12.5px; line-height: 1.35; }
 .insp-problem svg { flex: none; margin-top: 1px; }
 .s-gate { margin: 6px 0 0; font-size: 11.5px; letter-spacing: .04em; color: var(--warn); }
+
+/* Lot shapes: neighbours and shared walls */
+.neighbour { fill: #d9d6cd; stroke: #b9b5aa; stroke-width: .05; }
+.neighbour-hatch { opacity: .5; pointer-events: none; }
+.party-wall { stroke: #6b6a64; stroke-width: .32; fill: none; stroke-linecap: square; }
+.neighbour-label { font: 600 .42px var(--mono, monospace); letter-spacing: .08em; fill: #8b877d; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
+.twist.site { border-left-color: #6b6a64; }
+.os-program.wishes li::marker { content: '★ '; color: var(--warn); }
