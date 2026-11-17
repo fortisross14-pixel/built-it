@@ -7,7 +7,7 @@ import { BRIEFS, TWISTS } from '../game/briefs.js'
 import { available, lockReason } from '../game/packs.js'
 import {
   addLevel, addRoom, canPlaceItem, canPlaceRoom, cutRoom, duplicateLevel, extendRoom, itemAt, roomRuns, itemCells, mergeCandidates, mergeRooms, moveItem, moveRoom,
-  nearestEdge, placeItem, removeItem, rotateItem, itemConflict, placeBasics, removeRoom, removeTopLevel, roomAt, roomArea, setOpening, toggleOpening, updateRoom,
+  nearestEdge, placeItem, removeItem, rotateItem, itemConflict, itemProblem, placeBasics, removeRoom, removeTopLevel, roomAt, roomArea, setOpening, toggleOpening, updateRoom,
 } from '../engine/plan.js'
 import { evaluate } from '../engine/score.js'
 import { money } from './format.js'
@@ -225,17 +225,36 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
     if (b.misfit) return `${ITEMS[it.type].label} works here, but it belongs in ${ITEMS[it.type].rooms.map(t => ROOMS[t]?.label.toLowerCase()).filter(Boolean).slice(0, 2).join(' or ')}: functionality drops.`
     return null
   }
+  // Free placement: anything goes on the lot; a piece that doesn't fit is red until moved.
+  const fitMsg = (res) => res.conflict ? `Doesn't fit here: ${res.problem.replace(/\.$/, '').replace(/^./, c => c.toLowerCase())}. It's red until you move it.` : null
+  const commitFree = (res, okMsg, ev) => {
+    if (!commit(res, res.conflict ? null : okMsg, ev)) return false
+    if (res.conflict) say(fitMsg(res), 'warn')
+    return true
+  }
   const handleDrop = (o) => {
     if (!itemType) return
     const it = { type: itemType, rot: itemRot, q: quality, ...(placing?.product ? { product: placing.product } : {}), ...o }
-    commit(placeItem(project, li, it), placeMsg(it))
+    commitFree(placeItem(project, li, it), placeMsg(it))
   }
   const doRotate = (id) => {
     const res = rotateItem(project, li, id)
-    if (commit(res, null, 'select') && res.conflict) say('It overlaps something now. Move it to a free spot (shown in red).', 'error')
+    if (commit(res, null, 'select')) {
+      if (res.conflict) say(fitMsg(res), 'warn')
+      else if (conflicts.has(id)) say('Fits now.')
+    }
   }
   const conflicts = useMemo(() => new Set(level.items.filter(it => itemConflict(project, li, it)).map(it => it.id)), [project, li, level])
-  const handleMove = (id, o) => commit(moveItem(project, li, id, o))
+  const handleMove = (id, o) => {
+    const was = conflicts.has(id)
+    const it = level.items.find(i => i.id === id)
+    const res = moveItem(project, li, id, o)
+    if (!commit(res)) return
+    if (res.conflict) say(fitMsg(res), 'warn')
+    else if (was) say('Fits now.')
+    else { const m = it && placeMsg({ ...it, ...o }); if (m) say(m) }
+    setSelection({ kind: 'item', id })
+  }
 
   const selRoom = selection?.kind === 'room' ? level.rooms.find(r => r.id === selection.id) : null
   const selItem = selection?.kind === 'item' ? level.items.find(r => r.id === selection.id) : null
@@ -322,7 +341,7 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
       if (ITEMS[placing3D].site && li !== 0) return say('Landscaping goes on the ground level.')
       const o = originAt(p, placing3D), sz = itemSize({ type: placing3D, rot: itemRot })
       const it3 = { type: placing3D, rot: itemRot, q: quality, ...(placing?.product ? { product: placing.product } : {}), ...o }
-      if (commit(placeItem(project, li, it3), placeMsg(it3))) setPulse({ x: o.x + sz.w / 2, y: o.y + sz.h / 2, w: sz.w, h: sz.h, li, ceiling: ITEMS[placing3D].ceiling, id: Date.now() })
+      if (commitFree(placeItem(project, li, it3), placeMsg(it3))) setPulse({ x: o.x + sz.w / 2, y: o.y + sz.h / 2, w: sz.w, h: sz.h, li, ceiling: ITEMS[placing3D].ceiling, id: Date.now() })
       return
     }
     if (tool === 'look') {
@@ -377,7 +396,7 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
 
   let palette
   if (selItem) {
-    palette = <ItemInspector item={selItem}
+    palette = <ItemInspector item={selItem} problem={conflicts.has(selItem.id) ? itemProblem(project, li, selItem) : null}
       onQuality={(v) => commit(moveItem(project, li, selItem.id, { q: v }), null, 'select')}
       onProduct={(pid) => productOk(selItem.type, pid) ? commit(moveItem(project, li, selItem.id, { product: pid }), null, 'select') : say(lockReason(productsFor(selItem.type)[pid]))}
       productOk={(pid) => productOk(selItem.type, pid)}
@@ -447,7 +466,7 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
         {layer === 'design' ? (
           <PlanView project={project} li={li} tool={moving || merging ? 'select' : planTool} itemType={itemType} itemRot={itemRot} selection={selection} flash={flash}
             validateRect={(r) => shaping ? (() => { const e = (shaping.mode === 'extend' ? extendRoom : cutRoom)(project, li, shaping.id, r).error; return { ok: !e, error: e } })() : canPlaceRoom(project, li, r)}
-            validateItem={(it) => canPlaceItem(project, li, it)} shaping={shaping?.mode}
+            validateItem={(it, ignoreId) => canPlaceItem(project, li, it, ignoreId)} shaping={shaping?.mode}
             onTap={handleTap} onRect={handleRect} onStroke={handleStroke} onItemDrop={handleDrop} onMoveItem={handleMove}
             moving={moving ? { ...moving, ok: !moveCheck?.error || (!moving.dx && !moving.dy) } : null} onMoveDrag={(dx, dy) => setMoving(m => m && (m.dx !== dx || m.dy !== dy) ? { ...m, dx, dy } : m)}
             mergeIds={merging?.ids} bubble={bubble} conflicts={conflicts} />
@@ -717,17 +736,18 @@ export function ProductPicker({ type, value, ok, onPick }) {
   )
 }
 
-function ItemInspector({ item, onQuality, onRotate, onDelete, onClose, onProduct, productOk }) {
+function ItemInspector({ item, problem, onQuality, onRotate, onDelete, onClose, onProduct, productOk }) {
   const def = ITEMS[item.type]
   return (
     <div className="palette inspector">
       <div className="insp-head">
         <strong>{itemLabel(item)}</strong>
-        <span className="mono dim">{money(itemCost(item))}{isDecorLayer(item.type) ? '' : ' · drag to move'}</span>
+        <span className="mono dim">{money(itemCost(item))}{' · drag to move'}</span>
         <button className="chip" onClick={onRotate}><Icon name="rotate" size={16} /><span className="hide-xs">Rotate</span></button>
         <button className="icon-btn danger" onClick={onDelete} aria-label="Delete item"><Icon name="trash" size={18} /></button>
         <button className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="x" size={18} /></button>
       </div>
+      {problem && <p className="insp-problem"><Icon name="x" size={14} />{problem.replace(/\.$/, '')}. Drag it to a free spot: it doesn't count until it fits.</p>}
       {productsFor(item.type) && <div className="row"><span className="mono dim">PRODUCT</span><ProductPicker type={item.type} value={item.product || Object.keys(productsFor(item.type))[0]} ok={productOk} onPick={onProduct} /></div>}
       <div className="row"><span className="mono dim">QUALITY</span><QualityPicker value={item.q ?? 1} onChange={onQuality} /></div>
       <p className="hint">{['Basic: cheap, but staff and critics notice.', 'Standard: solid and sensible.', 'Premium: lifts Functionality and Aesthetics, at twice the price.'][item.q ?? 1]}</p>

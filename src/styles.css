@@ -1249,3 +1249,6 @@ button.sbar svg { transition: transform .3s cubic-bezier(.2,.8,.2,1); opacity: .
   .prof-card .pc-num { top: 10px; left: 11px; font-size: 10px; }
   .pc-unlock { font-size: 10px; line-height: 1.25; }
 }
+.toast.warn { background: #fff4e0; color: #6b4410; border-color: #d9a441; }
+.insp-problem { display: flex; gap: 6px; align-items: flex-start; margin: 2px 0 6px; padding: 8px 10px; border-radius: 8px; background: rgba(214, 64, 52, .1); color: #a3291f; font-size: 12.5px; line-height: 1.35; }
+.insp-problem svg { flex: none; margin-top: 1px; }

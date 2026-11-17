@@ -260,7 +260,10 @@ export function mergeRooms(project, li, aId, bId) {
 
 export function removeRoom(project, li, id) {
   const p = clone(project)
+  const gone = p.levels[li].rooms.find(r => r.id === id)
   p.levels[li].rooms = p.levels[li].rooms.filter(r => r.id !== id)
+  // Furniture inside an erased room goes with it.
+  if (gone) p.levels[li].items = p.levels[li].items.filter(it => !itemCells(it).every(c => inRoom(gone, c.x, c.y)))
   return cleanup(p)
 }
 
@@ -362,7 +365,8 @@ export function placeBasics(project, li, item) {
   return { ok: true, room, misfit }
 }
 
-export function canPlaceItem(project, li, item, ignoreId = null) {
+// limit: only check against the first `limit` items (the ones placed before this one).
+export function canPlaceItem(project, li, item, ignoreId = null, limit = Infinity) {
   const base = placeBasics(project, li, item)
   if (!base.ok) return base
   const def = ITEMS[item.type]
@@ -370,7 +374,8 @@ export function canPlaceItem(project, li, item, ignoreId = null) {
   const cells = itemCells(item)
   if (!def.overlay || def.ceiling) {
     const taken = new Set()
-    for (const it of level.items) {
+    for (const [n, it] of level.items.entries()) {
+      if (n >= limit) break
       if (it.id === ignoreId) continue
       if (def.ceiling ? !ITEMS[it.type].ceiling : ITEMS[it.type].overlay) continue
       for (const c of itemCells(it)) taken.add(ck(c.x, c.y))
@@ -380,38 +385,59 @@ export function canPlaceItem(project, li, item, ignoreId = null) {
   return base
 }
 
-// An item that overlaps another (e.g. after rotating) stays where it is, drawn red, until moved.
-export function itemConflict(project, li, it) { return !canPlaceItem(project, li, it, it.id).ok }
+// Free placement: items can be placed, moved and rotated anywhere on the lot. One that doesn't fit
+// (overlaps, straddles a wall, sits outside when it can't) is kept, drawn red and ignored by the
+// review until it's moved somewhere valid.
+// When two pieces overlap, the one moved or placed last (later in the list) is the red one.
+export function itemProblem(project, li, it) {
+  const idx = project.levels[li].items.findIndex(x => x.id === it.id)
+  const c = canPlaceItem(project, li, it, it.id, idx < 0 ? Infinity : idx)
+  return c.ok ? null : c.error
+}
+export function itemConflict(project, li, it) { return !!itemProblem(project, li, it) }
+
+// Keep a footprint on the lot (so it can always be dragged back).
+function onLot(project, it) {
+  const s = itemSize(it), { lot } = project
+  return { ...it, x: Math.max(0, Math.min(lot.w - s.w, it.x)), y: Math.max(0, Math.min(lot.h - s.h, it.y)) }
+}
 
 export function rotateItem(project, li, id) {
   const p = clone(project)
-  const it = p.levels[li].items.find(i => i.id === id)
-  if (!it) return { project }
-  it.rot = ((it.rot || 0) + 1) % 2
-  const bad = !placeBasics(p, li, it).ok
-  if (bad) return { project, error: 'No room to rotate there: it would leave the room.' }
-  return { project: p, conflict: itemConflict(p, li, it) }
+  const level = p.levels[li]
+  const i = level.items.findIndex(x => x.id === id)
+  if (i < 0) return { project }
+  const [it] = level.items.splice(i, 1), s = itemSize(it)
+  // Rotate about the centre, then nudge back onto the lot if needed. It goes last: it's the one that moved.
+  const rot = ((it.rot || 0) + 1) % 2
+  const cx = it.x + s.w / 2, cy = it.y + s.h / 2
+  const ns = itemSize({ ...it, rot })
+  const next = onLot(p, { ...it, rot, x: Math.round(cx - ns.w / 2), y: Math.round(cy - ns.h / 2) })
+  level.items.push(next)
+  const problem = itemProblem(p, li, next)
+  return { project: p, conflict: !!problem, problem }
 }
 
 export function placeItem(project, li, item) {
-  const check = canPlaceItem(project, li, item)
-  if (!check.ok) return { project, error: check.error }
+  if (!ITEMS[item.type]) return { project, error: 'Unknown item.' }
   const p = clone(project)
-  const placed = { id: uid('i'), rot: 0, q: 1, ...item }
+  const placed = onLot(project, { id: uid('i'), rot: 0, q: 1, ...item })
   p.levels[li].items.push(placed)
-  return { project: p, item: placed }
+  const problem = itemProblem(p, li, placed)
+  return { project: p, item: placed, conflict: !!problem, problem }
 }
 
 export function moveItem(project, li, id, patch) {
   const level = project.levels[li]
   const it = level.items.find(i => i.id === id)
   if (!it) return { project }
-  const next = { ...it, ...patch }
-  const check = canPlaceItem(project, li, next, id)
-  if (!check.ok) return { project, error: check.error }
   const p = clone(project)
-  Object.assign(p.levels[li].items.find(i => i.id === id), patch)
-  return { project: p }
+  const items = p.levels[li].items, i = items.findIndex(x => x.id === id)
+  const next = onLot(project, { ...items[i], ...patch })
+  // A real move puts it last, so it (not what it landed on) is the red one.
+  if (next.x !== items[i].x || next.y !== items[i].y || next.rot !== items[i].rot) { items.splice(i, 1); items.push(next) } else items[i] = next
+  const problem = itemProblem(p, li, next)
+  return { project: p, conflict: !!problem, problem }
 }
 
 export function removeItem(project, li, id) {
@@ -432,7 +458,9 @@ export function cleanup(p) {
     const edges = wallEdges(level)
     level.doors = level.doors.filter(k => edges.has(k) && !(li > 0 && edges.get(k).exterior))
     level.windows = level.windows.filter(k => edges.has(k) && edges.get(k).exterior)
-    level.items = level.items.filter(it => placeBasics(p, li, it).ok)
+    // Keep every item on the lot; ones that no longer fit (a room was erased or moved) just turn red.
+    const { lot } = p
+    level.items = level.items.filter(it => { const s = itemSize(it); return it.x >= 0 && it.y >= 0 && it.x + s.w <= lot.w && it.y + s.h <= lot.h })
   })
   return p
 }

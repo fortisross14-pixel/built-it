@@ -125,14 +125,12 @@ export default function PlanView({
       return begin({ kind: 'stroke', ...start, keys: ne.dist < 0.4 ? [ne.key] : [] })
     }
     if (tool === 'furnish' && itemType) return begin({ kind: 'ghost', ...start, o: itemOrigin(p) })
-    if (tool === 'select' && selection?.kind === 'item') {
-      const it = level.items.find(i => i.id === selection.id)
-      if (it) {
-        const s = itemSize(it)
-        if (p.wx >= it.x && p.wx < it.x + s.w && p.wy >= it.y && p.wy < it.y + s.h) {
-          return begin({ kind: 'move', ...start, id: it.id, dx: p.wx - it.x, dy: p.wy - it.y, o: { x: it.x, y: it.y }, type: it.type, rot: it.rot })
-        }
-      }
+    if (tool === 'select') {
+      // Drag any piece straight away (the selected one first, then furniture over overlays).
+      const hit = (it) => { const s = itemSize(it); return p.wx >= it.x && p.wx < it.x + s.w && p.wy >= it.y && p.wy < it.y + s.h }
+      const sel = selection?.kind === 'item' ? level.items.find(i => i.id === selection.id) : null
+      const it = (sel && hit(sel) && sel) || [...level.items].reverse().find(i => !ITEMS[i.type].overlay && hit(i)) || [...level.items].reverse().find(hit)
+      if (it) return begin({ kind: 'move', ...start, id: it.id, dx: p.wx - it.x, dy: p.wy - it.y, o: { x: it.x, y: it.y }, type: it.type, rot: it.rot })
     }
     begin({ kind: 'pan', ...start })
   }
@@ -244,7 +242,7 @@ export default function PlanView({
       : tool === 'furnish' && itemType && hover && !gesture ? { type: itemType, rot: itemRot, ...itemOrigin(hover) } : null
   if (ghostAt) {
     const s = itemSize(ghostAt)
-    const ok = gesture?.kind === 'move' ? true : validateItem ? validateItem(ghostAt).ok : true
+    const ok = validateItem ? validateItem(ghostAt, gesture?.kind === 'move' ? gesture.id : null).ok : true
     ghost = (
       <g className={`pghost ${ok ? 'ok' : 'bad'}`} transform={`translate(${ghostAt.x} ${ghostAt.y})`}>
         <rect width={s.w} height={s.h} />

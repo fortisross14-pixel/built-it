@@ -2,7 +2,7 @@
 import { CEILINGS, COMPLEMENTS, DOORS, ITEMS, MATERIALS, PAINTS, ROOFS, ROOMS, STYLES, defaultProduct, familyOf, itemSize, productDef, q } from '../game/catalog.js'
 import { BRIEFS, GRADES, TWISTS, checksFor, featuresFor, gradeFor, reqLabel } from '../game/briefs.js'
 import { bgOf } from '../game/architects.js'
-import { cellOwners, ck, edgeCells, footprint, inRoom as inRoomCell, itemCells, itemConflict, placeBasics, projectCost, roomArea, roomAt, roomCells, verticalLinks, wallEdges } from './plan.js'
+import { cellOwners, ck, edgeCells, footprint, inRoom as inRoomCell, itemCells, itemConflict, itemProblem, placeBasics, projectCost, roomArea, roomAt, roomCells, verticalLinks, wallEdges } from './plan.js'
 
 const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v))
 const avg = (a) => a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0
@@ -253,8 +253,8 @@ export function evaluate(project, offer, kit = []) {
   note('functionality', 'Item placement', placement, 'Every piece is in the room it belongs in.', `${misfits.length} item(s) sit in the wrong kind of room.`,
     misfits.slice(0, 6).map(it => `${ITEMS[it.type].label} in the ${(roomAt(project.levels[it.li], it.x, it.y) ? ROOMS[roomAt(project.levels[it.li], it.x, it.y).type].label : 'room').toLowerCase()}`))
   if (conflicts.length) {
-    note('functionality', 'Overlapping items', 0, '', `${conflicts.length} item(s) overlap something and don't count until you move them.`, conflicts.slice(0, 6).map(it => ITEMS[it.type].label))
-    checklist.push({ label: 'No overlapping items', ok: false, detail: `${conflicts.length} in red`, kind: 'conflict' })
+    note('functionality', 'Items that don\'t fit', 0, '', `${conflicts.length} item(s) in red don't fit where they are and don't count until you move them.`, conflicts.slice(0, 6).map(it => `${ITEMS[it.type].label}: ${(itemProblem(project, it.li, it) || '').replace(/\.$/, '').toLowerCase()}`))
+    checklist.push({ label: 'Every item fits', ok: false, detail: `${conflicts.length} in red`, kind: 'conflict' })
   }
 
   // Key layout checks for this building type: walking distance, graded Close / Mid / Far.
@@ -281,7 +281,6 @@ export function evaluate(project, offer, kit = []) {
   const checksW = keyChecks.length ? 0.2 : 0
   let functionality = 100 * (0.25 * reach + 0.17 * access + 0.12 * distScore + (brief.adj.length ? 0.18 : 0) * adj + 0.05 * crowd + 0.05 * wet + 0.05 * lift + 0.07 * lighting + 0.06 * equipQ + merchW * merchScore + checksW * checkScore + 0.06 * placement)
   functionality /= (brief.adj.length ? 1 : 0.82) + merchW + checksW + 0.06
-  functionality -= Math.min(25, conflicts.length * 5)
   // Signature pieces: each distinct boosted item type adds once (unlocks are meant to feel good).
   const boostTypes = new Set(items.map(it => it.type).filter(t => ITEMS[t].boost))
   let boostF = [...boostTypes].reduce((s, t) => s + (ITEMS[t].boost.f || 0), 0)
@@ -295,6 +294,7 @@ export function evaluate(project, offer, kit = []) {
   functionality += boostF
   if (boostF) notes.push({ group: 'functionality', label: 'Smart pieces', value: 1, text: `Specialist equipment makes the place work better (+${boostF}).` })
   if (!hasEntrance) functionality = Math.min(functionality, 12)
+  functionality -= Math.min(25, conflicts.length * 5)
   if (kit.includes('mentor')) functionality += 5
   const bg = bgOf(kit)
   if (bg?.func) functionality += bg.func

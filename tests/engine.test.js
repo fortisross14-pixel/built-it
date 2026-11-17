@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { addRoom, canPlaceItem, itemConflict, rotateItem, setOpening as setOpeningFn, cutRoom, duplicateLevel, extendRoom, mergeCandidates, mergeRooms, moveRoom, roomArea, roomPerimeter, newProject, placeItem, removeRoom, toggleOpening, wallEdges, verticalLinks, addLevel } from '../src/engine/plan.js'
+import { addRoom, canPlaceItem, itemConflict, moveItem, rotateItem, setOpening as setOpeningFn, cutRoom, duplicateLevel, extendRoom, mergeCandidates, mergeRooms, moveRoom, roomArea, roomPerimeter, newProject, placeItem, removeRoom, toggleOpening, wallEdges, verticalLinks, addLevel } from '../src/engine/plan.js'
 import { evaluate, merchandise } from '../src/engine/score.js'
 import { START_CASH, abandonCareer, acceptOffer, acknowledge, archiveCareer, buyPack, completeCommission, makeOffer, newCareer, newMeta, retryCommission, rng, unlocksFor } from '../src/engine/career.js'
 import { PACKS, available, makeCtx } from '../src/game/packs.js'
@@ -268,7 +268,8 @@ test('rooms: any orthogonal shape via extend and cut; walls follow the outline',
   // furniture outside the new outline is dropped by cleanup
   let q = placeItem(p, 0, { type: 'oven', x: 0, y: 5 }).project
   q = cutRoom(q, 0, id, { x: 0, y: 4, w: 2, h: 3 }).project
-  assert.ok(!q.levels[0].items.some(i => i.type === 'oven'), 'indoor-only items outside the new outline are dropped')
+  const oven = q.levels[0].items.find(i => i.type === 'oven')
+  assert.ok(oven && itemConflict(q, 0, oven), 'items left outside the new outline stay, flagged red')
   // scoring still runs on irregular rooms
   assert.ok(evaluate(p, cafeOffer()).overall >= 0)
 })
@@ -374,4 +375,21 @@ test('profiles: founders unlock specialists; expertise and signature finishes', 
   assert.equal(m2.profilesUnlocked.length, 4)
   assert.ok(m2.profilesUnlocked.every(id => profileById(id).unlockBy === 'base-w'))
   assert.equal(archiveCareer(meta, { ...done, portfolio: done.portfolio.slice(0, 2) }).profilesUnlocked.length, 0)
+})
+
+test('free placement: overlaps and bad spots are allowed but red until moved', () => {
+  let p = newProject(cafeOffer())
+  p = addRoom(p, 0, { x: 0, y: 0, w: 8, h: 6 }, 'seating').project
+  p = placeItem(p, 0, { type: 'sofa', x: 1, y: 1 }).project
+  const r = placeItem(p, 0, { type: 'sofa', x: 1, y: 1 })
+  assert.ok(!r.error && r.conflict, 'overlapping placement is accepted and flagged')
+  const id = r.item.id
+  const before = evaluate(r.project, cafeOffer())
+  const m = moveItem(r.project, 0, id, { x: 4, y: 3 })
+  assert.ok(!m.conflict && !itemConflict(m.project, 0, m.project.levels[0].items.find(i => i.id === id)), 'moving to a free spot fixes it')
+  assert.ok(before.checklist.some(c => c.kind === 'conflict'))
+  const off = moveItem(r.project, 0, id, { x: 50, y: 50 }).project.levels[0].items.find(i => i.id === id)
+  assert.ok(off.x + 2 <= 18 && off.y < 14, 'items are kept on the lot')
+  const toilet = placeItem(p, 0, { type: 'toilet', x: 12, y: 10 })
+  assert.ok(toilet.conflict && /outside/.test(toilet.problem), 'indoor-only items outside are red, not refused')
 })
