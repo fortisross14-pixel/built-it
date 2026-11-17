@@ -10,7 +10,7 @@ import { inRoom, labelPoint, nearestEdge, normRect, roomArea, roomOutline, roomR
 export default function PlanView({
   project, li, tool, itemType, itemRot = 0, selection, fitSignal = 0,
   validateRect, validateItem, onTap, onRect, onStroke, onItemDrop, onMoveItem, flash,
-  moving = null, onMoveDrag, mergeIds = null, bubble = null, shaping = null, conflicts = null,
+  moving = null, onMoveDrag, mergeIds = null, bubble = null, bubbleDock = false, shaping = null, conflicts = null,
 }) {
   const wrap = useRef(null)
   const svg = useRef(null)
@@ -265,7 +265,10 @@ export default function PlanView({
   // Screen position for the room bubble: above the room (or its moving ghost), clamped on screen.
   let bubblePos = null
   const anchor = movingRoom ? { ...movingRoom, x: movingRoom.x + moving.dx, y: movingRoom.y + moving.dy } : selRoom
-  if (bubble && anchor && size.w > 1) {
+  if (bubble && bubbleDock) {
+    // While extending, cutting, moving or merging, the bubble docks at the bottom so it never covers the area you're drawing into.
+    bubblePos = { docked: true, left: size.w / 2, top: size.h - 12, bw: Math.min(380, size.w - 16) }
+  } else if (bubble && anchor && size.w > 1) {
     const sx = (anchor.x + anchor.w / 2 - vb[0]) * v.z
     const top = (anchor.y - vb[1]) * v.z, bottom = (anchor.y + anchor.h - vb[1]) * v.z
     const below = top < 150
@@ -354,7 +357,7 @@ export default function PlanView({
         {ghost}
         {tool === 'room' && hover && !gesture && <rect x={Math.floor(hover.wx)} y={Math.floor(hover.wy)} width={1} height={1} className="cursor-cell" />}
       </svg>
-      {bubblePos && <div className={`room-bubble ${bubblePos.below ? 'below' : ''}`} style={{ left: bubblePos.left, top: bubblePos.top, '--bw': `${bubblePos.bw}px`, '--ax': `${bubblePos.ax}px` }} onPointerDown={e => e.stopPropagation()}>{bubble}</div>}
+      {bubblePos && <div className={`room-bubble ${bubblePos.below ? 'below' : ''} ${bubblePos.docked ? 'docked' : ''}`} style={{ left: bubblePos.left, top: bubblePos.top, '--bw': `${bubblePos.bw}px`, '--ax': `${bubblePos.ax}px` }} onPointerDown={e => e.stopPropagation()}>{bubble}</div>}
       <div className="plan-hud">
         <button className="hud-btn" onClick={fit} aria-label="Fit to lot">⤢</button>
         <button className="hud-btn" onClick={() => zoomBy(1.4)} aria-label="Zoom in">+</button>

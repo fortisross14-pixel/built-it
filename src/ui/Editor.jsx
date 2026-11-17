@@ -472,7 +472,7 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
             validateItem={(it, ignoreId) => canPlaceItem(project, li, it, ignoreId)} shaping={shaping?.mode}
             onTap={handleTap} onRect={handleRect} onStroke={handleStroke} onItemDrop={handleDrop} onMoveItem={handleMove}
             moving={moving ? { ...moving, ok: !moveCheck?.error || (!moving.dx && !moving.dy) } : null} onMoveDrag={(dx, dy) => setMoving(m => m && (m.dx !== dx || m.dy !== dy) ? { ...m, dx, dy } : m)}
-            mergeIds={merging?.ids} bubble={bubble} conflicts={conflicts} />
+            mergeIds={merging?.ids} bubble={bubble} bubbleDock={!!(shaping || moving || merging)} conflicts={conflicts} />
         ) : (
           <View3D project={project} cutLevel={wholeBuilding ? null : li} night={night} pickLevel={li}
             onTap={tap3D} onHover={setHover} highlights={highlights} pulse={pulse} focusLevel={li} showCeilings={tool === 'ceiling'} />
