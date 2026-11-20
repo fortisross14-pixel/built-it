@@ -21,6 +21,7 @@ A roguelite architecture game. Start as a junior architect with a corner shop. G
    - **Fixtures plus products.** Place a Clothes rack, Chiller, Aisle or Display, then assign its product (Women / Men / Kids, Produce / Meat / Dairy / Frozen / Drinks, Snacks / Condiments / Pasta & tins / Bakery...).
    - **Merchandising** counts toward Functionality: keep each department together, put displays and mannequins next to their racks and produce crates by the produce chiller, and keep tills near the door. The plan draws link lines between fixtures that work together.
 3. **Decorate 3D.** Floors, wall paint, ceilings, facade, entrance doors, window joinery and roof finishes, decor and landscaping, and ceiling lights, with a day/night toggle. By day, sunlight only enters through windows, skylights and doors, so windowless rooms look dim unless their lamps are on. At night, only your lamps light the rooms. Quality tiers: Basic, Standard, Premium.
+   **While you build, the brief shows only what the client asked for:** rooms, equipment, wishes, floors and budget. How well it works and looks, including layout checks, expert touches, signature features and placement, is revealed at the review.
 4. **Review.** Functionality, Requirements, Aesthetics and Budget, averaged into a grade:
    | Grade | Score | Effect |
    |---|---|---|

@@ -7,7 +7,7 @@ import { BRIEFS, TWISTS, levelsFor, LOT_KINDS } from '../game/briefs.js'
 import { available, lockReason } from '../game/packs.js'
 import {
   addLevel, addRoom, canPlaceItem, canPlaceRoom, cutRoom, duplicateLevel, extendRoom, itemAt, roomRuns, itemCells, mergeCandidates, mergeRooms, moveItem, moveRoom,
-  nearestEdge, placeItem, removeItem, rotateItem, itemConflict, itemProblem, placeBasics, removeRoom, removeTopLevel, roomAt, roomArea, setOpening, toggleOpening, updateRoom,
+  nearestEdge, placeItem, removeItem, rotateItem, itemConflict, itemProblem, removeRoom, removeTopLevel, roomAt, roomArea, setOpening, toggleOpening, updateRoom,
 } from '../engine/plan.js'
 import { evaluate } from '../engine/score.js'
 import { money } from './format.js'
@@ -223,12 +223,6 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
     if (p === project && last) say(last, 'error')
     else commit(p, null, 'opening')
   }
-  const placeMsg = (it) => {
-    const b = placeBasics(project, li, it)
-    if (!b.ok) return null
-    if (b.misfit) return `${ITEMS[it.type].label} works here, but it belongs in ${ITEMS[it.type].rooms.map(t => ROOMS[t]?.label.toLowerCase()).filter(Boolean).slice(0, 2).join(' or ')}: functionality drops.`
-    return null
-  }
   // Free placement: anything goes on the lot; a piece that doesn't fit is red until moved.
   const fitMsg = (res) => res.conflict ? `Doesn't fit here: ${res.problem.replace(/\.$/, '').replace(/^./, c => c.toLowerCase())}. It's red until you move it.` : null
   const commitFree = (res, okMsg, ev) => {
@@ -239,7 +233,7 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
   const handleDrop = (o) => {
     if (!itemType) return
     const it = { type: itemType, rot: itemRot, q: quality, ...(placing?.product ? { product: placing.product } : {}), ...o }
-    commitFree(placeItem(project, li, it), placeMsg(it))
+    commitFree(placeItem(project, li, it))
   }
   const doRotate = (id) => {
     const res = rotateItem(project, li, id)
@@ -251,12 +245,10 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
   const conflicts = useMemo(() => new Set(level.items.filter(it => itemConflict(project, li, it)).map(it => it.id)), [project, li, level])
   const handleMove = (id, o) => {
     const was = conflicts.has(id)
-    const it = level.items.find(i => i.id === id)
     const res = moveItem(project, li, id, o)
     if (!commit(res)) return
     if (res.conflict) say(fitMsg(res), 'warn')
     else if (was) say('Fits now.')
-    else { const m = it && placeMsg({ ...it, ...o }); if (m) say(m) }
     setSelection({ kind: 'item', id })
   }
 
@@ -345,7 +337,7 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
       if (ITEMS[placing3D].site && li !== 0) return say('Landscaping goes on the ground level.')
       const o = originAt(p, placing3D), sz = itemSize({ type: placing3D, rot: itemRot })
       const it3 = { type: placing3D, rot: itemRot, q: quality, ...(placing?.product ? { product: placing.product } : {}), ...o }
-      if (commitFree(placeItem(project, li, it3), placeMsg(it3))) setPulse({ x: o.x + sz.w / 2, y: o.y + sz.h / 2, w: sz.w, h: sz.h, li, ceiling: ITEMS[placing3D].ceiling, id: Date.now() })
+      if (commitFree(placeItem(project, li, it3))) setPulse({ x: o.x + sz.w / 2, y: o.y + sz.h / 2, w: sz.w, h: sz.h, li, ceiling: ITEMS[placing3D].ceiling, id: Date.now() })
       return
     }
     if (tool === 'look') {
@@ -394,7 +386,9 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
   // ---------------------------------------------------------------- palette (bottom tray)
   const budgetPct = Math.round(result.cost.total / offer.budget * 100)
   const twist = offer.twist ? TWISTS[offer.twist] : null
-  const done = result.checklist.filter(c => c.ok).length
+  // During construction only the brief (what was asked for) is shown; quality is revealed at the review.
+  const asked = result.checklist.filter(isAsked)
+  const done = asked.filter(c => c.ok).length
   const qualityBar = <QualityPicker value={quality} onChange={setQuality} />
   const swatchItems = (src, kind) => Object.entries(src).map(([id, m]) => ({ id, kind, ...m }))
 
@@ -455,7 +449,7 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
             <span className="mono">{money(result.cost.total, true)}</span><span className="bar"><i style={{ width: `${Math.min(100, budgetPct)}%` }} /></span>
           </button>
           {kit.includes('intern') && <span className="live-score mono" title="Eager intern estimate">≈{result.overall}</span>}
-          <button className="icon-btn brief-btn" onClick={() => setBriefOpen(o => !o)} aria-label="Brief"><Icon name="brief" /><span className="badge">{done}/{result.checklist.length}</span></button>
+          <button className="icon-btn brief-btn" onClick={() => setBriefOpen(o => !o)} aria-label="Brief"><Icon name="brief" /><span className="badge">{done}/{asked.length}</span></button>
           <button className="primary submit-btn" onClick={() => setConfirm(true)}><Icon name="stamp" size={18} /><span>Submit</span></button>
         </div>
       </header>
@@ -564,8 +558,8 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
             <h3>Submit for review?</h3>
             <p className="dim">The client, a planner, a critic and an accountant will walk through your building. F fails the project: you can retry, at the cost of a strike.</p>
             <ul className="mini-check">
-              {result.checklist.filter(c => !c.ok).slice(0, 6).map((c, i) => <li key={i}><Icon name="x" size={14} />{c.label} <span className="mono dim">{c.detail}</span></li>)}
-              {result.checklist.every(c => c.ok) && <li className="ok"><Icon name="check" size={14} />Every requirement is met.</li>}
+              {asked.filter(c => !c.ok).slice(0, 6).map((c, i) => <li key={i}><Icon name="x" size={14} />{c.label} <span className="mono dim">{c.detail}</span></li>)}
+              {asked.every(c => c.ok) && <li className="ok"><Icon name="check" size={14} />Every requirement is met.</li>}
             </ul>
             <div className="row end">
               <button className="ghost" onClick={() => setConfirm(false)}>Keep designing</button>
@@ -762,20 +756,16 @@ function ItemInspector({ item, problem, onQuality, onRotate, onDelete, onClose, 
 }
 
 const GENDERED = ['wc', 'fitting', 'changing']
+const isAsked = (c) => !c.kind || ['wish', 'room', 'item', 'budget'].includes(c.kind)
 
 function BriefPanel({ offer, brief, result, twist, kit, onClose }) {
   const lv = levelsFor(offer)
   const lk = LOT_KINDS[offer.lot.kind || 'standard']
   const groups = [
     ['Client wishes', result.checklist.filter(c => c.kind === 'wish')],
-    ['Key checks', result.checklist.filter(c => c.kind === 'check' || c.kind === 'conflict')],
-    ['Signature features', result.checklist.filter(c => c.kind === 'feature')],
-    ['Expert touches', result.checklist.filter(c => c.kind === 'excel')],
     ['Rooms', result.checklist.filter(c => c.kind === 'room')],
     ['Equipment', result.checklist.filter(c => c.kind === 'item')],
-    ['Relationships', result.checklist.filter(c => c.kind === 'adj' || c.kind === 'merch')],
-    ['Building', result.checklist.filter(c => !c.kind || c.kind === 'budget' || c.kind === 'light')],
-    ['Placement', result.notes.filter(n => n.label === 'Item placement' && n.value < 0.99).map(n => ({ label: n.text, ok: false, detail: (n.detail || []).slice(0, 2).join(' · ') }))],
+    ['Building', result.checklist.filter(c => !c.kind || c.kind === 'budget')],
   ]
   return (
     <div className="brief-panel">
@@ -814,6 +804,7 @@ function BriefPanel({ offer, brief, result, twist, kit, onClose }) {
           </ul>
         </div>
       ))}
+      <p className="dim small">This is what the client asked for. How well it works and looks (layout, routes, expert touches, finishes) is judged at the review.</p>
       <p className="dim small">A correct layout earns about 80 per rating; the rest comes from expert touches, curated finishes and spending well under budget. <b>S</b> needs 90+ overall and every rating at 85+.</p>
       <p className="dim small">Graded <b>F · C · B · A · S</b> on the average of Functionality, Requirements, Aesthetics and Budget. F fails. B, A and S unlock better {INDUSTRIES[brief.industry].label.toLowerCase()} pieces for every future architect.</p>
     </div>
