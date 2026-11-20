@@ -40,6 +40,14 @@ function installHelp() {
   return <>Tap the browser <b>menu (⋮)</b>, then <b>Install app</b> or <b>Add to Home screen</b>. If it isn't there yet, reload the page once and try again.</>
 }
 
+function lastSaved() {
+  try {
+    const sv = JSON.parse(localStorage.getItem('built-save-v2') || 'null')
+    if (!sv) return 'Nothing saved yet.'
+    return sv.savedAt ? `Last saved ${new Date(sv.savedAt).toLocaleString([], { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}. Download a copy to keep it safe.` : 'Your progress is saved on this device. Download a copy to keep it safe.'
+  } catch { return 'Storage is not available.' }
+}
+
 // ------------------------------------------------------------------ Settings
 export function SettingsButton() {
   const [open, setOpen] = useState(false)
@@ -76,6 +84,22 @@ export function SettingsButton() {
               </div>
             )}
             {installed && <p className="dim small">Installed as an app. Your progress is saved on this device.</p>}
+            <div className="install-row backup-row">
+              <span><b>Backup</b><small>{lastSaved()}</small></span>
+              <div className="row wrap">
+                <button className="ghost small" onClick={() => { feedback('select'); window.dispatchEvent(new Event('built:export')) }}><Icon name="brief" size={16} />Download</button>
+                <label className="ghost small file-btn"><Icon name="plus" size={16} />Restore
+                  <input type="file" accept="application/json,.json" onChange={async (e) => {
+                    const f = e.target.files?.[0]; e.target.value = ''
+                    if (!f) return
+                    if (!window.confirm('Restore this backup? It replaces the progress on this device.')) return
+                    window.dispatchEvent(new CustomEvent('built:import', { detail: await f.text() }))
+                    setOpen(false)
+                  }} />
+                </label>
+              </div>
+              <p className="dim small">Each copy of the game keeps its own save: an installed app and the browser on iPhone don't share progress. Use a backup to move between them.</p>
+            </div>
             <div className="row end"><button className="primary" onClick={() => setOpen(false)} autoFocus>Done</button></div>
           </div>
         </div>, document.body

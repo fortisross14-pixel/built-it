@@ -72,6 +72,14 @@ The menus use **Monograph**, a design language based on architects' presentation
 
 Project icons load from `public/art/projects/<id>.jpg`. See `ART_PROMPTS.md` for the image prompts and `scripts/slice-art.cjs` to cut a 6×4 grid into tiles.
 
+## Saving
+- **Every change is saved straight away.** The save is written within a fraction of a second, and immediately when you switch away from the app or close it.
+- **Two copies are kept in sync.** The game may be open in two places, for example the installed app and a browser tab on Android, or two tabs. Each save carries a revision stamp, and a copy never overwrites newer progress. When a copy comes back to the front, or another copy saves, it loads the newest save and says so.
+- **The design in progress has its own copy,** so a full storage can't cost you the level you're working on. If storage fills up, older thumbnails and plans are dropped first.
+- **Failures are never silent.** A **Saving failed** banner shows with **Retry** and **Download backup**.
+- **Settings → Backup** downloads your save as a file and restores it. On iPhone, the installed app and Safari keep separate saves, so use a backup to move between them.
+- `npm run test:e2e` runs the browser save tests: two copies, reload and background right after an edit, a long session, full storage, backup and restore, career steps, and old saves.
+
 ## Install as an app
 Built it! is a PWA. Open the site on a phone and use **Settings → Install Built it!**. If the browser has no install prompt, the button shows the manual steps for your browser. On iPhone, use Safari's **Share → Add to Home Screen**. It runs fullscreen and works offline after the first visit, because the service worker caches the game and all its art. Icons are rendered by `scripts/make-icons.cjs`.
 

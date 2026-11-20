@@ -7,41 +7,20 @@ import { snapshot } from './ui/scene.js'
 import { abandonCareer, acceptOffer, acknowledge, archiveCareer, buyPack, completeCommission, legacyTitle, newCareer, newMeta, perks, retireEarly, retryCommission } from './engine/career.js'
 import { critique, evaluate } from './engine/score.js'
 import { newProject } from './engine/plan.js'
+import { KEY, exportSave, isNewer, parseImport, readStored, requestPersistence, stampOf, writeSave } from './save.js'
+import SaveBanner from './ui/SaveBanner.jsx'
 
-const KEY = 'built-save-v2'
-
-function load() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(KEY))
-    if (raw?.meta?.version === 2) return raw
-  } catch { /* fresh save */ }
-  return { meta: newMeta(), career: null }
-}
-
-// Writes the save. If storage is full, sheds the bulkiest, least important data step by step
-// (old legacy thumbnails, then all legacy thumbnails, then older portfolio thumbnails and plans)
-// until it fits. Returns false only if even the slimmest save can't be written.
-const SHED = [
-  (d) => ({ ...d, meta: { ...d.meta, legacy: d.meta.legacy.map((l, i) => i < 5 ? l : { ...l, works: l.works.map(w => ({ ...w, thumb: null })), best: null }) } }),
-  (d) => ({ ...d, meta: { ...d.meta, legacy: d.meta.legacy.map(l => ({ ...l, works: l.works.map(w => ({ ...w, thumb: null })), best: null })) } }),
-  (d) => d.career ? { ...d, career: { ...d.career, portfolio: d.career.portfolio.map((p, i, a) => i >= a.length - 3 ? p : { ...p, thumb: null, project: null, review: null }) } } : d,
-  (d) => d.career ? { ...d, career: { ...d.career, portfolio: d.career.portfolio.map(p => ({ ...p, thumb: null, review: p.review && { head: p.review.head } })) } } : d,
-  (d) => ({ ...d, meta: { ...d.meta, legacy: d.meta.legacy.slice(0, 10) } }),
-]
-export function persist(save) {
-  let data = save
-  for (let step = 0; step <= SHED.length; step++) {
-    try { localStorage.setItem(KEY, JSON.stringify(data)); return true } catch (e) {
-      if (step === SHED.length) { console.warn('Save failed', e); return false }
-      data = SHED[step](data)
-    }
-  }
-  return false
+function initialSave() {
+  const r = readStored()
+  return { save: r.save || { meta: newMeta(), career: null }, error: r.error || null }
 }
 
 export default function App() {
-  const [save, setSave] = useState(load)
+  const [boot] = useState(initialSave)
+  const [save, setSave] = useState(boot.save)
   const { meta, career } = save
+  const [saveStatus, setSaveStatus] = useState(boot.error ? { kind: 'error', text: boot.error } : null)
+  const [syncKey, setSyncKey] = useState(0) // remounts the editor when a newer save is loaded
   const [screen, setScreenState] = useState(() => (save.career ? (save.career.pending ? 'review' : save.career.status !== 'active' ? 'end' : 'hub') : 'home'))
   const screenRef = useRef(screen)
   screenRef.current = screen
@@ -69,23 +48,94 @@ export default function App() {
   }, [])
   const [work, setWork] = useState(null)
 
-  // Storage writes are batched (a burst of edits = one write) and flushed immediately when the
-  // app is hidden, closed or switched away from, so the latest change is always on disk.
+  // ---- saving (see save.js). Writes are batched (a burst of edits = one write) and flushed when the
+  // app is hidden or closed. Before writing, and whenever the app comes back to the front, it checks
+  // whether another copy (a second tab, the installed app) saved something newer, and loads that
+  // instead of overwriting it.
   const saveRef = useRef(save)
   saveRef.current = save
+  const base = useRef(stampOf(boot.save))
   const dirty = useRef(false)
+  const adopting = useRef(false)
+  const adopt = (stored, why) => {
+    base.current = stampOf(stored)
+    saveRef.current = stored
+    dirty.current = false
+    adopting.current = true
+    setSave(stored)
+    setSyncKey(k => k + 1)
+    if (stored.career?.pending) setScreenState('review')
+    else if (!stored.career && ['editor', 'hub', 'shop'].includes(screenRef.current)) setScreenState('home')
+    if (why) setSaveStatus({ kind: 'info', text: why })
+  }
+  const writeNow = () => {
+    if (!dirty.current) return
+    dirty.current = false
+    const r = writeSave(saveRef.current, base.current)
+    if (r.ok) {
+      base.current = r.stamp
+      setSaveStatus(st => r.shed ? { kind: 'warn', text: 'Storage was nearly full, so older thumbnails and plans were removed to keep saving. Download a backup in Settings to be safe.' }
+        : st?.kind === 'error' ? { kind: 'ok', text: 'Saving works again.' } : st)
+    } else if (r.conflict) {
+      adopt(r.conflict, 'Built it! is open in another tab or window. Loaded the newest progress from there: keep playing in just one.')
+    } else {
+      dirty.current = true // try again on the next change
+      setSaveStatus({ kind: 'error', text: r.error })
+    }
+  }
+  const writeRef = useRef(writeNow)
+  writeRef.current = writeNow
+  const checkNewer = (why) => {
+    const r = readStored()
+    if (r.save && isNewer(stampOf(r.save), base.current) && !dirty.current) adopt(r.save, why)
+  }
+  const checkRef = useRef(checkNewer)
+  checkRef.current = checkNewer
   useEffect(() => {
+    if (adopting.current) { adopting.current = false; return }
+    if (save === boot.save) return // nothing changed since loading
     dirty.current = true
-    const t = setTimeout(() => { persist(saveRef.current); dirty.current = false }, 250)
+    const t = setTimeout(() => writeRef.current(), 200)
     return () => clearTimeout(t)
-  }, [save])
+  }, [save]) // eslint-disable-line
   useEffect(() => {
-    const flush = () => { if (dirty.current) { persist(saveRef.current); dirty.current = false } }
-    const onVis = () => { if (document.visibilityState === 'hidden') flush() }
+    requestPersistence()
+    const flush = () => writeRef.current()
+    const onVis = () => { if (document.visibilityState === 'hidden') flush(); else checkRef.current('Loaded your latest progress from another tab or window.') }
+    const onStorage = (e) => { if (e.key === KEY || e.key === null) checkRef.current('Updated with progress saved in another tab or window.') }
+    const onFocus = () => checkRef.current('Loaded your latest progress from another tab or window.')
     window.addEventListener('pagehide', flush)
+    window.addEventListener('storage', onStorage)
+    window.addEventListener('focus', onFocus)
     document.addEventListener('visibilitychange', onVis)
-    return () => { window.removeEventListener('pagehide', flush); document.removeEventListener('visibilitychange', onVis); flush() }
-  }, [])
+    // Backup download / restore, asked for from Settings.
+    const onExport = () => {
+      writeRef.current()
+      const url = URL.createObjectURL(exportSave(saveRef.current))
+      const a = document.createElement('a')
+      a.href = url; a.download = `built-it-save-${new Date().toISOString().slice(0, 10)}.json`
+      document.body.appendChild(a); a.click(); a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 2000)
+    }
+    const onImport = (e) => {
+      try {
+        const next = parseImport(e.detail)
+        const w = writeSave(next, { savedAt: Date.now() + 1e9, rev: 1e9 }) // a restore always wins
+        if (!w.ok) throw new Error(w.error || 'Could not write the backup.')
+        base.current = w.stamp
+        adopt({ ...next, ...w.stamp }, 'Backup restored.')
+        setScreenState('home')
+      } catch (err) { setSaveStatus({ kind: 'error', text: `Restore failed: ${err.message}` }) }
+    }
+    window.addEventListener('built:export', onExport)
+    window.addEventListener('built:import', onImport)
+    return () => {
+      window.removeEventListener('pagehide', flush); window.removeEventListener('storage', onStorage); window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVis)
+      window.removeEventListener('built:export', onExport); window.removeEventListener('built:import', onImport)
+      flush()
+    }
+  }, []) // eslint-disable-line
   const update = (patch) => setSave(s => ({ ...s, ...patch }))
 
   const startCareer = ({ name, profile }) => {
@@ -134,34 +184,43 @@ export default function App() {
   const ctx = useMemo(() => makeCtx(meta, career), [meta.unlocked, career?.packs, career?.profile]) // eslint-disable-line
   const kit = useMemo(() => perks(career), [career?.packs, career?.profile]) // eslint-disable-line
 
+  const view = (() => {
   if (screen === 'editor' && career?.current) {
-    return <Editor key={career.current.offer.id + (career.current.attempts || 0)} offer={career.current.offer} kit={kit} ctx={ctx} project={career.current.project}
-      onChange={saveProject} onSubmit={submit} onExit={() => setScreen('hub')} />
-  }
-  if (screen === 'review' && career?.pending) {
-    return <Review entry={career.pending} career={career}
-      onContinue={() => afterReview(acknowledge(career))}
-      onRetry={() => afterReview(retryCommission(career))}
-      onAbandon={() => afterReview(career.status === 'fired' ? acknowledge(career) : abandonCareer(career))} />
-  }
-  if (screen === 'end' && career) return <CareerEnd career={career} meta={meta} title={legacyTitle(career)} onArchive={archive} />
-  if (screen === 'new') return <NewCareer meta={meta} warnReplace={!!career} onStart={startCareer} onBack={() => setScreen('home')} />
-  if (screen === 'unlocks') return <Unlocks meta={meta} onBack={() => setScreen(career ? 'hub' : 'home')} />
-  if (screen === 'legacy') return <Legacy meta={meta} onBack={() => setScreen('home')} />
-  if (screen === 'shop' && career) {
-    return <Shop career={career} onBack={() => setScreen('hub')} onBuy={(id) => { const r = buyPack(career, id); if (!r.error) { feedback('fanfare'); update({ career: r.career }) } }} />
-  }
-  if (screen === 'hub' && career) {
-    return (
-      <>
-        <Hub career={career} meta={meta} onAccept={accept} onResume={() => setScreen('editor')} onHome={() => setScreen('home')}
-          onShop={() => setScreen('shop')} onUnlocks={() => setScreen('unlocks')}
-          onRetire={() => { update({ career: retireEarly(career) }); setScreen('end') }} onOpenWork={setWork} />
-        {work && <WorkModal work={work} onClose={() => setWork(null)} />}
-      </>
-    )
-  }
-  return <Home meta={meta} career={career}
-    onContinue={() => setScreen(career?.pending ? 'review' : career?.status === 'active' ? 'hub' : 'end')}
-    onNew={() => setScreen('new')} onUnlocks={() => setScreen('unlocks')} onLegacy={() => setScreen('legacy')} />
+      return <Editor key={career.current.offer.id + (career.current.attempts || 0) + ':' + syncKey} offer={career.current.offer} kit={kit} ctx={ctx} project={career.current.project}
+        onChange={saveProject} onSubmit={submit} onExit={() => setScreen('hub')} />
+    }
+    if (screen === 'review' && career?.pending) {
+      return <Review entry={career.pending} career={career}
+        onContinue={() => afterReview(acknowledge(career))}
+        onRetry={() => afterReview(retryCommission(career))}
+        onAbandon={() => afterReview(career.status === 'fired' ? acknowledge(career) : abandonCareer(career))} />
+    }
+    if (screen === 'end' && career) return <CareerEnd career={career} meta={meta} title={legacyTitle(career)} onArchive={archive} />
+    if (screen === 'new') return <NewCareer meta={meta} warnReplace={!!career} onStart={startCareer} onBack={() => setScreen('home')} />
+    if (screen === 'unlocks') return <Unlocks meta={meta} onBack={() => setScreen(career ? 'hub' : 'home')} />
+    if (screen === 'legacy') return <Legacy meta={meta} onBack={() => setScreen('home')} />
+    if (screen === 'shop' && career) {
+      return <Shop career={career} onBack={() => setScreen('hub')} onBuy={(id) => { const r = buyPack(career, id); if (!r.error) { feedback('fanfare'); update({ career: r.career }) } }} />
+    }
+    if (screen === 'hub' && career) {
+      return (
+        <>
+          <Hub career={career} meta={meta} onAccept={accept} onResume={() => setScreen('editor')} onHome={() => setScreen('home')}
+            onShop={() => setScreen('shop')} onUnlocks={() => setScreen('unlocks')}
+            onRetire={() => { update({ career: retireEarly(career) }); setScreen('end') }} onOpenWork={setWork} />
+          {work && <WorkModal work={work} onClose={() => setWork(null)} />}
+        </>
+      )
+    }
+    return <Home meta={meta} career={career}
+      onContinue={() => setScreen(career?.pending ? 'review' : career?.status === 'active' ? 'hub' : 'end')}
+      onNew={() => setScreen('new')} onUnlocks={() => setScreen('unlocks')} onLegacy={() => setScreen('legacy')} />
+  })()
+  return (
+    <>
+      {view}
+      <SaveBanner status={saveStatus} onClose={() => setSaveStatus(null)}
+        onRetry={() => { dirty.current = true; writeRef.current() }} onBackup={() => window.dispatchEvent(new Event('built:export'))} />
+    </>
+  )
 }

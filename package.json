@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "test:e2e": "vite build && node tests/e2e/save.e2e.cjs"
   },
   "dependencies": {
     "react": "^19.1.1",

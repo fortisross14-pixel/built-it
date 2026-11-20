@@ -1284,3 +1284,13 @@ button.sbar svg { transition: transform .3s cubic-bezier(.2,.8,.2,1); opacity: .
 
 /* Add a floor */
 .lvl.add-floor { display: grid; place-items: center; border-style: dashed; }
+
+/* Save status */
+.save-banner { position: fixed; z-index: 200; left: 50%; top: calc(10px + env(safe-area-inset-top)); transform: translateX(-50%); width: min(560px, calc(100% - 20px)); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px; border-radius: 12px; font-size: 13px; line-height: 1.35; box-shadow: var(--shadow-2, 0 10px 30px #0003); background: #fff; color: #222; border: 1px solid #ddd; animation: sbIn .3s both; }
+.save-banner > span { flex: 1 1 200px; }
+.save-banner.error { background: #fff1ef; border-color: #d64034; color: #7a1d14; }
+.save-banner.warn { background: #fff7e8; border-color: #d9a441; color: #6b4410; }
+.save-banner.ok { background: #eef8f1; border-color: #3a8a5c; color: #1d4d31; }
+.file-btn { position: relative; overflow: hidden; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.backup-row .row { gap: 8px; }
