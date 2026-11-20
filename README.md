@@ -17,6 +17,13 @@ A roguelite architecture game. Start as a junior architect with a corner shop. G
 2. **Design 2D.**
    - The Room and Furnish tools open a catalog. Pick one thing, place as many as you like, then press the red ✕ to stop. The catalog has a **This project / All** filter.
    - Select a room to get a bubble with **Move** (the room and everything in it), **Merge** (with a same-type neighbour) and **Erase** (asks for confirmation).
+   - **Move anything, any time.** Select a room or a piece of furniture and drag it.
+     - Rooms keep their furniture, doors and windows when they move.
+     - A room that doesn't fit yet, because it overlaps another room, leaves the lot or has nothing below it, stays red and lands by itself once its spot is free. To swap two rooms, drag one onto the other, then drag the second into the gap.
+     - Red furniture works the same way.
+     - You can't submit while anything is red.
+   - **Furniture has a bubble** too: Rotate, Duplicate, Delete, quality and product.
+   - **Floors:** the **+** button under the floor list adds a floor up to the brief's limit. The layers button duplicates or removes the top floor. Stairs and lifts show where they land on the floor above: green once linked, amber where you still need to place stairs.
    - The Erase tool only removes objects.
    - **Fixtures plus products.** Place a Clothes rack, Chiller, Aisle or Display, then assign its product (Women / Men / Kids, Produce / Meat / Dairy / Frozen / Drinks, Snacks / Condiments / Pasta & tins / Bakery...).
    - **Merchandising** counts toward Functionality: keep each department together, put displays and mannequins next to their racks and produce crates by the produce chiller, and keep tills near the door. The plan draws link lines between fixtures that work together.

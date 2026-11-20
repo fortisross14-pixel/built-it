@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { addRoom, canPlaceItem, itemConflict, moveItem, rotateItem, setOpening as setOpeningFn, cutRoom, duplicateLevel, extendRoom, mergeCandidates, mergeRooms, moveRoom, roomArea, roomPerimeter, newProject, placeItem, removeRoom, toggleOpening, wallEdges, verticalLinks, addLevel } from '../src/engine/plan.js'
+import { addRoom, canPlaceItem, floatingCount, itemConflict, moveItem, rotateItem, setOpening as setOpeningFn, cutRoom, duplicateLevel, extendRoom, mergeCandidates, mergeRooms, moveRoom, roomArea, roomPerimeter, newProject, placeItem, removeRoom, toggleOpening, wallEdges, verticalLinks, addLevel } from '../src/engine/plan.js'
 import { evaluate, merchandise } from '../src/engine/score.js'
 import { START_CASH, abandonCareer, acceptOffer, acknowledge, archiveCareer, buyPack, completeCommission, makeOffer, newCareer, newMeta, retryCommission, rng, unlocksFor } from '../src/engine/career.js'
 import { PACKS, available, makeCtx } from '../src/game/packs.js'
@@ -228,7 +228,8 @@ test('every brief requirement is placeable with base items', () => {
 test('rooms: move carries contents; merge joins same-type neighbours', () => {
   let p = referenceCafe()
   const dining = p.levels[0].rooms.find(r => r.type === 'seating')
-  assert.match(moveRoom(p, 0, dining.id, 1, 0).error, /Overlaps/)
+  const over = moveRoom(p, 0, dining.id, 1, 0)
+  assert.ok(over.floating && /Overlaps/.test(over.problem), 'an overlapping move floats instead of failing')
   const service = p.levels[0].rooms.find(r => r.type === 'service')
   // move the WC (2x3 at 14,2) down by 6 cells: free space
   const wc = p.levels[0].rooms.find(r => r.type === 'wc')
@@ -452,4 +453,28 @@ test('offers: later jobs vary site and wishes; wishes are scored as requirements
   const r2 = evaluate(q, offer)
   assert.ok(r2.checklist.find(c => c.kind === 'wish' && /terrace/i.test(c.label)).ok)
   assert.ok(r2.requirements > r1.requirements)
+})
+
+test('rooms: swap two rooms by moving one onto the other; it floats red, then lands', () => {
+  let p = newProject(cafeOffer())
+  p = addRoom(p, 0, { x: 0, y: 0, w: 4, h: 3 }, 'kitchen').project
+  p = addRoom(p, 0, { x: 4, y: 0, w: 4, h: 3 }, 'storage').project
+  p = setOpeningFn(p, 0, 'v:4:1', 'door').project
+  p = placeItem(p, 0, { type: 'oven', x: 1, y: 1 }).project
+  const [kitchen, storage] = p.levels[0].rooms
+  // 1. kitchen onto the storage: floats, carrying its oven
+  let r = moveRoom(p, 0, kitchen.id, 4, 0)
+  assert.ok(r.floating)
+  assert.equal(floatingCount(r.project), 1)
+  assert.ok(!r.project.levels[0].items.some(i => i.type === 'oven'), 'the oven travels with the floating kitchen')
+  assert.ok(evaluate(r.project, cafeOffer()).checklist.some(c => c.kind === 'conflict'))
+  // 2. storage into the kitchen's old spot: it fits, and the kitchen lands by itself
+  r = moveRoom(r.project, 0, storage.id, -4, 0)
+  assert.ok(!r.floating)
+  assert.equal(floatingCount(r.project), 0)
+  const L = r.project.levels[0]
+  assert.equal(L.rooms.find(x => x.type === 'kitchen').x, 4)
+  assert.equal(L.rooms.find(x => x.type === 'storage').x, 0)
+  assert.equal(L.items.find(i => i.type === 'oven').x, 5)
+  assert.equal(L.doors.length, 1, 'no door is lost on the way')
 })

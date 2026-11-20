@@ -252,6 +252,11 @@ export function evaluate(project, offer, kit = []) {
   const placement = useful.length ? 1 - misfits.length / useful.length : 1
   note('functionality', 'Item placement', placement, 'Every piece is in the room it belongs in.', `${misfits.length} item(s) sit in the wrong kind of room.`,
     misfits.slice(0, 6).map(it => `${ITEMS[it.type].label} in the ${(roomAt(project.levels[it.li], it.x, it.y) ? ROOMS[roomAt(project.levels[it.li], it.x, it.y).type].label : 'room').toLowerCase()}`))
+  const floatingN = project.levels.reduce((n, l) => n + (l.floating || []).length, 0)
+  if (floatingN) {
+    note('functionality', 'Rooms not placed', 0, '', `${floatingN} room(s) in red are not placed and don't count.`, project.levels.flatMap(l => (l.floating || []).map(f => ROOMS[f.room.type]?.label)))
+    checklist.push({ label: 'Every room placed', ok: false, detail: `${floatingN} in red`, kind: 'conflict' })
+  }
   if (conflicts.length) {
     note('functionality', 'Items that don\'t fit', 0, '', `${conflicts.length} item(s) in red don't fit where they are and don't count until you move them.`, conflicts.slice(0, 6).map(it => `${ITEMS[it.type].label}: ${(itemProblem(project, it.li, it) || '').replace(/\.$/, '').toLowerCase()}`))
     checklist.push({ label: 'Every item fits', ok: false, detail: `${conflicts.length} in red`, kind: 'conflict' })
@@ -303,7 +308,7 @@ export function evaluate(project, offer, kit = []) {
   functionality += boostF
   if (boostF) notes.push({ group: 'functionality', label: 'Smart pieces', value: 1, text: `Specialist equipment makes the place work better (+${boostF}).` })
   if (!hasEntrance) functionality = Math.min(functionality, 12)
-  functionality -= Math.min(25, conflicts.length * 5)
+  functionality -= Math.min(40, conflicts.length * 5 + floatingN * 10)
   if (kit.includes('mentor')) functionality += 5
   const bg = bgOf(kit)
   if (bg?.func) functionality += bg.func

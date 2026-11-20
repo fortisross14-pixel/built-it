@@ -7,7 +7,7 @@ import { BRIEFS, TWISTS, levelsFor, LOT_KINDS } from '../game/briefs.js'
 import { available, lockReason } from '../game/packs.js'
 import {
   addLevel, addRoom, canPlaceItem, canPlaceRoom, cutRoom, duplicateLevel, extendRoom, itemAt, roomRuns, itemCells, mergeCandidates, mergeRooms, moveItem, moveRoom,
-  nearestEdge, placeItem, removeItem, rotateItem, itemConflict, itemProblem, removeRoom, removeTopLevel, roomAt, roomArea, setOpening, toggleOpening, updateRoom,
+  nearestEdge, placeItem, removeItem, rotateItem, floatingAt, roomCells, itemConflict, itemProblem, removeRoom, removeTopLevel, roomAt, roomArea, setOpening, toggleOpening, updateRoom,
 } from '../engine/plan.js'
 import { evaluate } from '../engine/score.js'
 import { money } from './format.js'
@@ -38,7 +38,7 @@ const LAYERS = {
 }
 
 const HINTS = {
-  select: 'Tap a room for Move / Merge / Erase, or an item to edit it. Two fingers pan and zoom.',
+  select: 'Tap a room or a piece of furniture for its actions, then drag it anywhere. Red means it does not fit yet. Two fingers pan and zoom.',
   door: 'Tap a wall to add or remove a door. Doors on outside walls are entrances.',
   window: 'Tap or drag along outside walls to add windows.',
   erase: 'Tap furniture, a door or a window to remove it. Rooms are removed from their Select bubble.',
@@ -86,6 +86,7 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
   const [merging, setMerging] = useState(null)
   const [shaping, setShaping] = useState(null) // { id, mode: 'extend' | 'cut' }
   const [confirmErase, setConfirmErase] = useState(null)
+  const [dropPending, setDropPending] = useState(false) // a direct room drag just ended
   const [toast, setToast] = useState(null)
   const [briefOpen, setBriefOpen] = useState(false)
   const [levelMenu, setLevelMenu] = useState(false)
@@ -178,7 +179,10 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
       return
     }
     if (planTool === 'select') {
-      const it = itemAt(level, x, y)
+      const fl = floatingAt(level, x, y)
+      if (fl) { feedback('select'); return setSelection({ kind: 'room', id: fl.room.id }) }
+      // Lights and decor belong to Decorate 3D: in the plan, taps go to furniture and rooms.
+      const it = itemAt({ ...level, items: level.items.filter(i => !isDecorLayer(i.type)) }, x, y)
       if (it) { feedback('select'); return setSelection({ kind: 'item', id: it.id }) }
       const r = roomAt(level, x, y)
       if (r) { feedback('select'); return setSelection({ kind: 'room', id: r.id }) }
@@ -242,6 +246,14 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
       else if (conflicts.has(id)) say('Fits now.')
     }
   }
+  const duplicate = (it) => {
+    const s = itemSize(it)
+    const tries = [[s.w, 0], [0, s.h], [-s.w, 0], [0, -s.h], [s.w, s.h], [-s.w, s.h], [s.w * 2, 0], [0, s.h * 2]]
+    const { id, ...rest } = it
+    const spot = tries.map(([dx, dy]) => ({ ...rest, x: it.x + dx, y: it.y + dy })).find(c => canPlaceItem(project, li, c).ok) || { ...rest, x: it.x + 1, y: it.y }
+    const res = placeItem(project, li, spot)
+    if (commitFree(res, 'Duplicated.')) setSelection({ kind: 'item', id: res.item.id })
+  }
   const conflicts = useMemo(() => new Set(level.items.filter(it => itemConflict(project, li, it)).map(it => it.id)), [project, li, level])
   const handleMove = (id, o) => {
     const was = conflicts.has(id)
@@ -252,16 +264,27 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
     setSelection({ kind: 'item', id })
   }
 
-  const selRoom = selection?.kind === 'room' ? level.rooms.find(r => r.id === selection.id) : null
+  const selFloat = selection?.kind === 'room' ? (level.floating || []).find(f => f.room.id === selection.id) || null : null
+  const selRoom = selection?.kind === 'room' ? level.rooms.find(r => r.id === selection.id) || selFloat?.room || null : null
   const selItem = selection?.kind === 'item' ? level.items.find(r => r.id === selection.id) : null
   // While shaping, taps on the plan do nothing (drags draw the rectangle).
   const moveCheck = useMemo(() => moving ? moveRoom(project, li, moving.id, moving.dx, moving.dy) : null, [moving, project, li])
 
   const startMove = () => { feedback('tool'); setMoving({ id: selRoom.id, dx: 0, dy: 0 }) }
+  // Moves are never refused: a room that doesn't fit floats (red) until it does.
   const confirmMove = () => {
-    if (!moving.dx && !moving.dy) { setMoving(null); return }
-    if (commit(moveCheck, null, 'room')) setMoving(null)
+    if (!moving || (!moving.dx && !moving.dy)) { setMoving(null); return }
+    const wasFloating = !!selFloat || (level.floating || []).some(f => f.room.id === moving.id)
+    if (commit(moveCheck, null, 'room')) {
+      if (moveCheck.floating) say(`Not placed yet: ${(moveCheck.problem || "it doesn't fit here").replace(/\.$/, '').replace(/^./, c => c.toLowerCase())}. It stays red until it fits.`, 'warn')
+      else if (wasFloating) say('Placed.')
+      // anything that was waiting may have landed too
+      setSelection({ kind: 'room', id: moving.id })
+    }
+    setMoving(null)
   }
+  // Finish a direct drag once the last drag position has rendered (so the move uses it).
+  useEffect(() => { if (dropPending) { setDropPending(false); confirmMove() } }, [dropPending]) // eslint-disable-line
   const startMerge = () => {
     const cands = mergeCandidates(level, selRoom)
     if (!cands.length) return say(`No neighbouring ${ROOMS[selRoom.type].label.toLowerCase()} shares a whole wall with this one.`)
@@ -280,9 +303,9 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
     bubble = (
       <div className="bubble-row">
         <span className="mono">{moving.dx || moving.dy ? `${moving.dx >= 0 ? '+' : ''}${moving.dx}, ${moving.dy >= 0 ? '+' : ''}${moving.dy} m` : 'Drag to move'}</span>
-        <button className="bb ok" disabled={!!moveCheck?.error} onClick={confirmMove}><Icon name="check" size={16} />Place</button>
+        <button className="bb ok" onClick={confirmMove}><Icon name="check" size={16} />Place</button>
         <button className="bb" onClick={() => setMoving(null)}><Icon name="x" size={16} />Cancel</button>
-        {moveCheck?.error && (moving.dx || moving.dy) ? <em className="bb-err">{moveCheck.error}</em> : null}
+        {moveCheck?.floating && (moving.dx || moving.dy) ? <em className="bb-err">Stays red: {moveCheck.problem}</em> : null}
       </div>
     )
   } else if (layer === 'design' && shaping) {
@@ -296,6 +319,23 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
     )
   } else if (layer === 'design' && merging) {
     bubble = <div className="bubble-row"><span>Tap a highlighted room</span><button className="bb" onClick={() => setMerging(null)}><Icon name="x" size={16} />Cancel</button></div>
+  } else if (layer === 'design' && selFloat) {
+    const why = canPlaceRoom(project, li, roomCells(selFloat.room), selFloat.room.id).error
+    bubble = (
+      <div className="bubble-col">
+        <div className="bubble-head">
+          <i className="sw" style={{ background: ROOMS[selRoom.type].color }} />
+          <b>{ROOMS[selRoom.type].label}</b>
+          <span className="mono bad-txt">NOT PLACED</span>
+          <button className="bb icon" onClick={() => setSelection(null)} aria-label="Close"><Icon name="x" size={16} /></button>
+        </div>
+        <p className="bubble-note">{(why || "It doesn't fit here").replace(/\.$/, "")}. Drag it to a free spot, or move what's in the way: it lands by itself as soon as it fits.</p>
+        <div className="bubble-row">
+          <button className="bb" onClick={startMove}><Icon name="move" size={16} />Move</button>
+          <button className="bb danger" onClick={() => { feedback('tap'); setConfirmErase(selRoom.id) }}><Icon name="trash" size={16} />Erase</button>
+        </div>
+      </div>
+    )
   } else if (layer === 'design' && selRoom) {
     const program = [...new Set(brief.rooms.map(r => r.type))]
     const types = [...program, ...Object.keys(ROOMS).filter(t => !program.includes(t) && (showAll || ROOMS[t].basic))]
@@ -323,6 +363,32 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
           <button className="bb" onClick={startMove}><Icon name="move" size={16} />Move</button>
           <button className="bb" onClick={startMerge} disabled={!canMerge} title={canMerge ? '' : 'Needs a same-type neighbour sharing a whole wall'}><Icon name="merge" size={16} />Merge</button>
           <button className="bb danger" onClick={() => { feedback('tap'); setConfirmErase(selRoom.id) }}><Icon name="trash" size={16} />Erase</button>
+        </div>
+      </div>
+    )
+  }
+
+  // Furniture gets the same kind of bubble as rooms, with its own actions.
+  if (layer === 'design' && selItem && !bubble) {
+    const def = ITEMS[selItem.type]
+    const problem = conflicts.has(selItem.id) ? itemProblem(project, li, selItem) : null
+    bubble = (
+      <div className="bubble-col">
+        <div className="bubble-head">
+          <b>{itemLabel(selItem)}</b>
+          <span className="mono dim">{money(itemCost(selItem))}</span>
+          <button className="bb icon" onClick={() => setSelection(null)} aria-label="Close"><Icon name="x" size={16} /></button>
+        </div>
+        {problem && <p className="bubble-note bad-txt">{problem.replace(/\.$/, '')}. Drag it to a free spot: it's red until it fits.</p>}
+        <div className="bubble-row">
+          {def.w !== def.h && <button className="bb" onClick={() => doRotate(selItem.id)}><Icon name="rotate" size={16} />Rotate</button>}
+          <button className="bb" onClick={() => duplicate(selItem)}><Icon name="copy" size={16} />Duplicate</button>
+          <button className="bb danger" onClick={() => { commit(removeItem(project, li, selItem.id), null, 'remove'); setSelection(null) }}><Icon name="trash" size={16} />Delete</button>
+        </div>
+        <div className="bubble-row wrap">
+          <QualityPicker value={selItem.q ?? 1} onChange={(v) => commit(moveItem(project, li, selItem.id, { q: v }), null, 'select')} compact />
+          {productsFor(selItem.type) && <ProductPicker type={selItem.type} value={selItem.product || Object.keys(productsFor(selItem.type))[0]} ok={(pid) => productOk(selItem.type, pid)}
+            onPick={(pid) => productOk(selItem.type, pid) ? commit(moveItem(project, li, selItem.id, { product: pid }), null, 'select') : say(lockReason(productsFor(selItem.type)[pid]))} />}
         </div>
       </div>
     )
@@ -393,7 +459,9 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
   const swatchItems = (src, kind) => Object.entries(src).map(([id, m]) => ({ id, kind, ...m }))
 
   let palette
-  if (selItem) {
+  if (selItem && layer === 'design') {
+    palette = <div className="palette"><p className="hint">Drag the piece to move it. Rotate, duplicate, quality and product are in its bubble.</p></div>
+  } else if (selItem) {
     palette = <ItemInspector item={selItem} problem={conflicts.has(selItem.id) ? itemProblem(project, li, selItem) : null}
       onQuality={(v) => commit(moveItem(project, li, selItem.id, { q: v }), null, 'select')}
       onProduct={(pid) => productOk(selItem.type, pid) ? commit(moveItem(project, li, selItem.id, { product: pid }), null, 'select') : say(lockReason(productsFor(selItem.type)[pid]))}
@@ -450,7 +518,11 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
           </button>
           {kit.includes('intern') && <span className="live-score mono" title="Eager intern estimate">≈{result.overall}</span>}
           <button className="icon-btn brief-btn" onClick={() => setBriefOpen(o => !o)} aria-label="Brief"><Icon name="brief" /><span className="badge">{done}/{asked.length}</span></button>
-          <button className="primary submit-btn" onClick={() => setConfirm(true)}><Icon name="stamp" size={18} /><span>Submit</span></button>
+          <button className="primary submit-btn" onClick={() => {
+            const red = result.checklist.filter(c => c.kind === 'conflict')
+            if (red.length) return say(`Can't submit yet: ${red.map(c => `${c.label.toLowerCase()} (${c.detail})`).join(', ')}. Move the red pieces into place first.`, 'error')
+            setConfirm(true)
+          }}><Icon name="stamp" size={18} /><span>Submit</span></button>
         </div>
       </header>
 
@@ -469,6 +541,7 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
             validateItem={(it, ignoreId) => canPlaceItem(project, li, it, ignoreId)} shaping={shaping?.mode}
             onTap={handleTap} onRect={handleRect} onStroke={handleStroke} onItemDrop={handleDrop} onMoveItem={handleMove}
             moving={moving ? { ...moving, ok: !moveCheck?.error || (!moving.dx && !moving.dy) } : null} onMoveDrag={(dx, dy) => setMoving(m => m && (m.dx !== dx || m.dy !== dy) ? { ...m, dx, dy } : m)}
+            onRoomDragStart={(id) => { feedback('tool'); setMoving({ id, dx: 0, dy: 0 }) }} onRoomDragEnd={() => setDropPending(true)}
             mergeIds={merging?.ids} bubble={bubble} bubbleDock={!!(shaping || moving || merging)} conflicts={conflicts} />
         ) : (
           <View3D project={project} cutLevel={wholeBuilding ? null : li} night={night} pickLevel={li}
@@ -479,7 +552,8 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
           {[...project.levels.keys()].reverse().map(i => (
             <button key={i} className={`lvl ${i === li ? 'on' : ''}`} onClick={() => { setLi(i); clearModes() }}>L{i + 1}</button>
           ))}
-          {lv.max > 1 && layer === 'design' && <button className="lvl add" onClick={() => setLevelMenu(m => !m)} aria-label="Levels"><Icon name="layers" size={16} /></button>}
+          {layer === 'design' && project.levels.length < lv.max && <button className="lvl add-floor" onClick={() => { const r = addLevel(project, lv.max); if (commit(r, `Floor L${project.levels.length + 1} added: draw rooms on top of the floor below`, 'room')) { setLi(project.levels.length); clearModes() } }} aria-label="Add a floor"><Icon name="plus" size={16} /></button>}
+          {lv.max > 1 && layer === 'design' && <button className="lvl add" onClick={() => setLevelMenu(m => !m)} aria-label="More floor options"><Icon name="layers" size={16} /></button>}
           {levelMenu && layer === 'design' && (
             <div className="level-menu">
               <button onClick={() => { const r = addLevel(project, lv.max); if (commit(r, null, 'room')) setLi(project.levels.length); setLevelMenu(false) }}><Icon name="plus" size={16} />Add empty level</button>

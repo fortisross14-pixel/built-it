@@ -3,16 +3,18 @@ import { ITEMS, MATERIALS, PRODUCTS, ROOMS, itemSize } from '../game/catalog.js'
 import { LOT_KINDS } from '../game/briefs.js'
 import { merchandise } from '../engine/score.js'
 import { settings } from './fx.js'
-import { inRoom, labelPoint, nearestEdge, normRect, roomArea, roomOutline, roomRuns, wallEdges } from '../engine/plan.js'
+import { inRoom, itemCells, labelPoint, nearestEdge, normRect, roomArea, roomOutline, roomRuns, wallEdges } from '../engine/plan.js'
 
 // CAD-style plan editor. One finger = current tool, two fingers = pan/zoom.
 // Mouse: wheel zooms, right/middle drag pans.
 export default function PlanView({
   project, li, tool, itemType, itemRot = 0, selection, fitSignal = 0,
   validateRect, validateItem, onTap, onRect, onStroke, onItemDrop, onMoveItem, flash,
-  moving = null, onMoveDrag, mergeIds = null, bubble = null, bubbleDock = false, shaping = null, conflicts = null,
+  moving = null, onMoveDrag, onRoomDragStart, onRoomDragEnd, mergeIds = null, bubble = null, bubbleDock = false, shaping = null, conflicts = null,
 }) {
   const wrap = useRef(null)
+  const levelNow = project.levels[li]
+  const findRoom = (id) => levelNow.rooms.find(r => r.id === id) || (levelNow.floating || []).find(f => f.room.id === id)?.room || null
   const svg = useRef(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
   const touched = useRef(false)
@@ -120,6 +122,12 @@ export default function PlanView({
     const start = { x: e.clientX, y: e.clientY, t: performance.now(), view: v, p }
     if (e.pointerType === 'mouse' && e.button !== 0) return begin({ kind: 'pan', ...start, noTap: true })
     if (moving) return begin({ kind: 'roomMove', ...start, base: { dx: moving.dx, dy: moving.dy } })
+    if (tool === 'select' && selection?.kind === 'room' && onRoomDragStart) {
+      // Drag the selected room straight away (furniture inside it is dragged on its own).
+      const sr = findRoom(selection.id)
+      const onItem = level.items.some(it => !ITEMS[it.type].overlay && (() => { const s = itemSize(it); return p.wx >= it.x && p.wx < it.x + s.w && p.wy >= it.y && p.wy < it.y + s.h })())
+      if (sr && inRoom(sr, Math.floor(p.wx), Math.floor(p.wy)) && !onItem) return begin({ kind: 'roomMove', ...start, base: { dx: 0, dy: 0 }, direct: true, id: sr.id })
+    }
     if (tool === 'room') return begin({ kind: 'rect', ...start, a: cellOf(p), b: cellOf(p) })
     if (tool === 'window') {
       const ne = nearestEdge(p.wx, p.wy)
@@ -130,7 +138,8 @@ export default function PlanView({
       // Drag any piece straight away (the selected one first, then furniture over overlays).
       const hit = (it) => { const s = itemSize(it); return p.wx >= it.x && p.wx < it.x + s.w && p.wy >= it.y && p.wy < it.y + s.h }
       const sel = selection?.kind === 'item' ? level.items.find(i => i.id === selection.id) : null
-      const it = (sel && hit(sel) && sel) || [...level.items].reverse().find(i => !ITEMS[i.type].overlay && hit(i)) || [...level.items].reverse().find(hit)
+      const movable = level.items.filter(i => ITEMS[i.type].layer !== 'decor') // lights and decor are moved in Decorate 3D
+      const it = (sel && hit(sel) && sel) || [...movable].reverse().find(i => !ITEMS[i.type].overlay && hit(i)) || [...movable].reverse().find(hit)
       if (it) return begin({ kind: 'move', ...start, id: it.id, dx: p.wx - it.x, dy: p.wy - it.y, o: { x: it.x, y: it.y }, type: it.type, rot: it.rot })
     }
     begin({ kind: 'pan', ...start })
@@ -167,7 +176,10 @@ export default function PlanView({
       if (ne.dist < 0.4 && !cur.keys.includes(ne.key)) next = { ...cur, keys: [...cur.keys, ne.key] }
     }
     if (cur.kind === 'ghost') next = { ...cur, o: itemOrigin(p) }
-    if (cur.kind === 'roomMove') { onMoveDrag?.(cur.base.dx + Math.round(p.wx - cur.p.wx), cur.base.dy + Math.round(p.wy - cur.p.wy)); return }
+    if (cur.kind === 'roomMove') {
+      if (cur.direct && !cur.started) { if (moved < 6) return; cur.started = true; onRoomDragStart?.(cur.id) }
+      onMoveDrag?.(cur.base.dx + Math.round(p.wx - cur.p.wx), cur.base.dy + Math.round(p.wy - cur.p.wy)); return
+    }
     if (cur.kind === 'move') next = { ...cur, o: { x: Math.round(p.wx - cur.dx), y: Math.round(p.wy - cur.dy) }, moved: cur.moved || moved > 6 }
     if (next !== cur) { g.current = next; setGesture(next) }
   }
@@ -200,6 +212,9 @@ export default function PlanView({
       onItemDrop?.(cur.o)
     } else if (cur.kind === 'move') {
       if (cur.moved) onMoveItem?.(cur.id, cur.o)
+      else onTap?.({ ...p, ...cellOf(p) })
+    } else if (cur.kind === 'roomMove' && cur.direct) {
+      if (cur.started) onRoomDragEnd?.()
       else onTap?.({ ...p, ...cellOf(p) })
     }
     begin(null)
@@ -260,11 +275,12 @@ export default function PlanView({
     const maxX = Math.max(...level.rooms.map(r => r.x + r.w)), maxY = Math.max(...level.rooms.map(r => r.y + r.h))
     return { minX, minY, maxX, maxY }
   }, [level])
-  const selRoom = selection?.kind === 'room' ? level.rooms.find(r => r.id === selection.id) : null
-  const movingRoom = moving ? level.rooms.find(r => r.id === moving.id) : null
+  const selRoom = selection?.kind === 'room' ? findRoom(selection.id) : null
+  const movingRoom = moving ? findRoom(moving.id) : null
+  const selItemB = selection?.kind === 'item' ? level.items.find(r => r.id === selection.id) : null
   // Screen position for the room bubble: above the room (or its moving ghost), clamped on screen.
   let bubblePos = null
-  const anchor = movingRoom ? { ...movingRoom, x: movingRoom.x + moving.dx, y: movingRoom.y + moving.dy } : selRoom
+  const anchor = movingRoom ? { ...movingRoom, x: movingRoom.x + moving.dx, y: movingRoom.y + moving.dy } : selRoom || (selItemB && { x: selItemB.x, y: selItemB.y, ...itemSize(selItemB) })
   if (bubble && bubbleDock) {
     // While extending, cutting, moving or merging, the bubble docks at the bottom so it never covers the area you're drawing into.
     bubblePos = { docked: true, left: size.w / 2, top: size.h - 12, bw: Math.min(380, size.w - 16) }
@@ -309,6 +325,18 @@ export default function PlanView({
         ))}
 
         {below && below.rooms.map(r => <path key={r.id} d={roomOutline(r)} className="below" />)}
+        {/* Stairs and lifts from the floor below land here: build a room over them and place stairs on top. */}
+        {below && below.items.filter(it => ITEMS[it.type].vertical).map(it => {
+          const s = itemSize(it)
+          const linked = level.items.some(b => ITEMS[b.type].vertical && !!ITEMS[b.type].lift === !!ITEMS[it.type].lift && itemCells(b).some(c => c.x >= it.x && c.x < it.x + s.w && c.y >= it.y && c.y < it.y + s.h))
+          return (
+            <g key={`land${it.id}`} className={`landing ${linked ? 'ok' : 'open'}`}>
+              <rect x={it.x} y={it.y} width={s.w} height={s.h} />
+              <text x={it.x + s.w / 2} y={it.y + s.h / 2 - 0.25}>{ITEMS[it.type].lift ? 'LIFT' : 'STAIRS'} FROM L{li}</text>
+              <text x={it.x + s.w / 2} y={it.y + s.h / 2 + 0.35} className="sub">{linked ? 'linked ✓' : `place ${ITEMS[it.type].lift ? 'a lift' : 'stairs'} here`}</text>
+            </g>
+          )
+        })}
 
         {level.rooms.map(r => (
           <g key={r.id} className={`room ${selRoom?.id === r.id ? 'sel' : ''} ${flash === r.id ? 'flash' : ''}`}>
@@ -321,6 +349,14 @@ export default function PlanView({
         {level.items.filter(it => ITEMS[it.type].overlay).map(it => <Item key={it.id} it={it} sel={selItem?.id === it.id} bad={conflicts?.has(it.id)} />)}
         {level.items.filter(it => !ITEMS[it.type].overlay).map(it => <Item key={it.id} it={it} sel={selItem?.id === it.id} bad={conflicts?.has(it.id)} />)}
 
+        {(level.floating || []).map(f => (
+          <g key={`fl${f.room.id}`} className={`room floating ${selRoom?.id === f.room.id ? 'sel' : ''}`}>
+            {roomRuns(f.room).map((q, i) => <rect key={i} x={q.x} y={q.y} width={q.w} height={q.h} className="float-fill" style={{ fill: ROOMS[f.room.type]?.color }} />)}
+            {f.items.map(it => { const sz = itemSize(it); return <g key={it.id} className="item conflict" transform={`translate(${it.x} ${it.y})`}><ItemSymbol type={it.type} w={sz.w} h={sz.h} product={it.product} /></g> })}
+            <path d={roomOutline(f.room)} className="float-outline" />
+            {(() => { const lp = labelPoint(f.room); return <g className="tag" transform={`translate(${lp.x} ${lp.y})`}><text y={-0.05} className="tag-name">{ROOMS[f.room.type]?.label.toUpperCase()}</text><text y={0.55} className="tag-area float-tag">NOT PLACED · MOVE IT</text></g> })()}
+          </g>
+        ))}
         {merchLinks.map((l, i) => <line key={`ml${i}`} x1={l.a.x} y1={l.a.y} x2={l.b.x} y2={l.b.y} className={`merch-link ${l.kind}`} style={{ stroke: l.color }} />)}
         {edges.map(e => {
           if (doors.has(e.key)) return <Door key={e.key} e={e} />
@@ -346,7 +382,7 @@ export default function PlanView({
         {movingRoom && (
           <g className={`move-ghost ${moving.ok ? 'ok' : 'bad'}`} transform={`translate(${moving.dx} ${moving.dy})`}>
             {roomRuns(movingRoom).map((q, i) => <rect key={i} x={q.x} y={q.y} width={q.w} height={q.h} className="ghost-fill" style={{ fill: ROOMS[movingRoom.type]?.color }} />)}
-            {level.items.filter(it => !ITEMS[it.type].site && inRoom(movingRoom, it.x, it.y)).map(it => {
+            {[...level.items.filter(it => !ITEMS[it.type].site && inRoom(movingRoom, it.x, it.y)), ...((level.floating || []).find(f => f.room.id === movingRoom.id)?.items || [])].map(it => {
               const sz = itemSize(it)
               return <g key={it.id} transform={`translate(${it.x} ${it.y})`}><ItemSymbol type={it.type} w={sz.w} h={sz.h} /></g>
             })}

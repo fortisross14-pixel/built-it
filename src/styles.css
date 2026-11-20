@@ -1265,3 +1265,22 @@ button.sbar svg { transition: transform .3s cubic-bezier(.2,.8,.2,1); opacity: .
 .room-bubble.docked::after { display: none; }
 .crash { min-height: 100dvh; display: grid; place-content: center; gap: 14px; padding: 24px; text-align: center; background: var(--bg, #efefec); color: var(--text, #111); }
 .crash pre { max-width: 90vw; white-space: pre-wrap; font-size: 11px; opacity: .55; }
+
+/* Floating rooms: moved somewhere they don't fit yet */
+.room.floating .float-fill { opacity: .55; }
+.float-outline { fill: rgba(214, 64, 52, .12); stroke: #d64034; stroke-width: .14; stroke-dasharray: .4 .2; animation: march 1s linear infinite; }
+.room.floating.sel .float-outline { stroke-width: .22; }
+.float-tag { fill: #c0392b !important; font-weight: 600; }
+.bad-txt { color: #c0392b; }
+.bubble-note { margin: 2px 2px 6px; font-size: 12px; line-height: 1.35; max-width: 34ch; }
+.bubble-row.wrap { flex-wrap: wrap; }
+
+/* Stairs and lifts from the floor below */
+.landing rect { fill: rgba(47, 125, 91, .08); stroke: #2f7d5b; stroke-width: .08; stroke-dasharray: .25 .15; }
+.landing.open rect { fill: rgba(221, 157, 44, .14); stroke: #b7791f; }
+.landing text { font: 600 .34px var(--mono, monospace); text-anchor: middle; dominant-baseline: middle; fill: #2f7d5b; pointer-events: none; letter-spacing: .04em; }
+.landing.open text { fill: #9a6414; }
+.landing text.sub { font-weight: 400; font-size: .3px; }
+
+/* Add a floor */
+.lvl.add-floor { display: grid; place-items: center; border-style: dashed; }

@@ -36,7 +36,7 @@ export function lotArea(lot) {
   return lot.w * lot.h - (lot.blocked || []).reduce((s, b) => s + b.w * b.h, 0)
 }
 
-export function emptyLevel() { return { rooms: [], doors: [], windows: [], items: [] } }
+export function emptyLevel() { return { rooms: [], doors: [], windows: [], items: [], floating: [] } }
 
 export function newProject(offer) {
   return {
@@ -242,24 +242,76 @@ const shiftKey = (k, dx, dy) => { const [o, x, y] = k.split(':'); return `${o}:$
 
 // Move a room with everything it holds: furniture, decor, lights and the doors and windows
 // in its walls. Fails if rooms on the level above rest on it.
+// ---------------------------------------------------------------- floating rooms
+// Rooms can be moved anywhere at any time. A room that doesn't fit where it is dropped (overlaps
+// another room, leaves the lot, has no structure below) floats: it is drawn red, carries its
+// furniture, doors and windows with it, and is ignored by walls and scoring. It lands by itself as
+// soon as its spot is free. You can't submit while anything floats.
+const floatsOf = (level) => level.floating || (level.floating = [])
+export function floatingAt(level, x, y) { return (level.floating || []).find(f => inRoom(f.room, x, y)) || null }
+export function floatingCount(project) { return project.levels.reduce((s, l) => s + (l.floating || []).length, 0) }
+
+// Lift a placed room off the plan (mutates a cloned project).
+function liftRoom(L, room) {
+  const owns = (k) => edgeCells(k).some(c => inRoom(room, c.x, c.y))
+  // A door shared with another room (placed or floating) stays put; the room's own outside doors
+  // and windows travel with it.
+  const other = (c) => !inRoom(room, c.x, c.y) && (L.rooms.some(r => r.id !== room.id && inRoom(r, c.x, c.y)) || (L.floating || []).some(f => inRoom(f.room, c.x, c.y)))
+  const shared = (k) => edgeCells(k).some(other)
+  const doors = L.doors.filter(k => owns(k) && !shared(k)), windows = L.windows.filter(owns)
+  const mine = (it) => !ITEMS[it.type].site && itemCells(it).some(c => inRoom(room, c.x, c.y)) && !(ITEMS[it.type].site === 'both' && !itemCells(it).every(c => inRoom(room, c.x, c.y)))
+  const items = L.items.filter(mine)
+  L.items = L.items.filter(it => !items.includes(it))
+  L.doors = L.doors.filter(k => !owns(k) || shared(k))
+  L.windows = L.windows.filter(k => !owns(k))
+  L.rooms = L.rooms.filter(r => r.id !== room.id)
+  floatsOf(L).push({ room, items, doors, windows })
+}
+function shiftEntry(f, dx, dy) {
+  const cells = roomCells(f.room).map(k => { const { x, y } = parse(k); return ck(x + dx, y + dy) })
+  f.room = withCells(f.room, cells)
+  f.items = f.items.map(it => ({ ...it, x: it.x + dx, y: it.y + dy }))
+  f.doors = f.doors.map(k => shiftKey(k, dx, dy))
+  f.windows = f.windows.map(k => shiftKey(k, dx, dy))
+}
+// Float upper rooms that lost their support, and land floating rooms whose spot is now free.
+function settle(p) {
+  for (let pass = 0; pass < 6; pass++) {
+    let changed = false
+    p.levels.forEach((L, li) => {
+      if (li > 0) {
+        const below = cellOwners(p.levels[li - 1])
+        for (const r of [...L.rooms]) if (roomCells(r).some(k => !below.has(k))) { liftRoom(L, r); changed = true }
+      }
+      for (const f of [...floatsOf(L)]) {
+        if (!canPlaceRoom(p, li, roomCells(f.room), f.room.id).ok) continue
+        L.floating = L.floating.filter(x => x !== f)
+        L.rooms.push(f.room)
+        for (const k of f.doors) if (!L.doors.includes(k)) L.doors.push(k)
+        for (const k of f.windows) if (!L.windows.includes(k)) L.windows.push(k)
+        L.items.push(...f.items)
+        changed = true
+      }
+    })
+    if (!changed) break
+  }
+  return p
+}
+
+// Move a room (placed or floating). Never refused: if it doesn't fit, it floats until it does.
 export function moveRoom(project, li, id, dx, dy) {
   const level = project.levels[li]
-  const room = level.rooms.find(r => r.id === id)
-  if (!room) return { project }
   if (!dx && !dy) return { project }
-  const moved = roomCells(room).map(k => { const { x, y } = parse(k); return ck(x + dx, y + dy) })
-  const check = canPlaceRoom(project, li, moved, id)
-  if (!check.ok) return { project, error: check.error }
-  if (supportsAbove(project, li, roomCells(room))) return { project, error: 'Rooms on the level above stand on this one. Move those first.' }
+  if (!level.rooms.some(r => r.id === id) && !(level.floating || []).some(f => f.room.id === id)) return { project }
   const p = clone(project)
   const L = p.levels[li]
-  const owns = (k) => edgeCells(k).some(c => inRoom(room, c.x, c.y))
-  L.doors = L.doors.map(k => owns(k) ? shiftKey(k, dx, dy) : k)
-  L.windows = L.windows.map(k => owns(k) ? shiftKey(k, dx, dy) : k)
-  for (const it of L.items) if (!ITEMS[it.type].site && inRoom(room, it.x, it.y)) { it.x += dx; it.y += dy }
-  const i = L.rooms.findIndex(r => r.id === id)
-  L.rooms[i] = withCells(L.rooms[i], moved)
-  return { project: cleanup(p) }
+  const placed = L.rooms.find(r => r.id === id)
+  if (placed) liftRoom(L, placed)
+  const f = L.floating.find(x => x.room.id === id)
+  shiftEntry(f, dx, dy)
+  const next = cleanup(p)
+  const floating = !!next.levels[li].floating.find(x => x.room.id === id)
+  return { project: next, floating, problem: floating ? canPlaceRoom(next, li, roomCells(f.room), id).error : null }
 }
 
 // Same-type neighbours that share at least one wall. The merged room can be any shape.
@@ -285,6 +337,8 @@ export function mergeRooms(project, li, aId, bId) {
 
 export function removeRoom(project, li, id) {
   const p = clone(project)
+  // a floating room just goes (with what it carries)
+  if ((p.levels[li].floating || []).some(f => f.room.id === id)) { p.levels[li].floating = p.levels[li].floating.filter(f => f.room.id !== id); return cleanup(p) }
   const gone = p.levels[li].rooms.find(r => r.id === id)
   p.levels[li].rooms = p.levels[li].rooms.filter(r => r.id !== id)
   // Furniture inside an erased room goes with it.
@@ -480,6 +534,7 @@ export function itemAt(level, x, y) {
 
 // Drop openings no longer on valid walls and items no longer inside valid rooms.
 export function cleanup(p) {
+  settle(p)
   p.levels.forEach((level, li) => {
     const edges = wallEdges(level)
     level.doors = level.doors.filter(k => edges.has(k) && !(li > 0 && edges.get(k).exterior))
@@ -506,7 +561,7 @@ export function duplicateLevel(project, li, max) {
   const p = clone(project)
   const src = p.levels[li]
   const copy = {
-    rooms: src.rooms.map(r => ({ ...r, id: uid('r') })),
+    rooms: src.rooms.map(r => ({ ...r, id: uid('r') })), floating: [],
     doors: [...src.doors], windows: [...src.windows],
     items: src.items.filter(it => !ITEMS[it.type].site && !(ITEMS[it.type].site === 'both' && !roomAt(src, it.x, it.y))).map(it => ({ ...it, id: uid('i') })),
   }
