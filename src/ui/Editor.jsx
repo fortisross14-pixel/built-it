@@ -101,7 +101,10 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
   const lv = levelsFor(offer)
   const result = useMemo(() => evaluate(project, offer, kit), [project, offer, kit])
 
-  useEffect(() => { const t = setTimeout(() => onChange(project), 400); return () => clearTimeout(t) }, [project]) // eslint-disable-line
+  // Every change is handed to the app straight away (the app batches the actual storage writes
+  // and flushes them when the page is hidden or closed), so nothing is lost on exit.
+  const first = useRef(true)
+  useEffect(() => { if (first.current) { first.current = false; return } onChange(project) }, [project]) // eslint-disable-line
   useEffect(() => { if (li >= project.levels.length) setLi(project.levels.length - 1) }, [project.levels.length, li])
 
   const say = (text, kind = 'info') => {
@@ -538,7 +541,7 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
       {briefOpen && <div className="scrim" onClick={() => setBriefOpen(false)} />}
 
       {catalog && (
-        <CatalogSheet kind={catalog} brief={brief} ctx={ctx} result={result} showAll={showAll} setShowAll={setShowAll}
+        <CatalogSheet kind={catalog} brief={brief} levels={lv} ctx={ctx} result={result} showAll={showAll} setShowAll={setShowAll}
           onPick={pickFromCatalog} onClose={() => { setCatalog(null); if (!placing) setTool(layer === 'design' ? 'select' : 'look') }} say={say} />
       )}
 
@@ -578,7 +581,7 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
 // ---------------------------------------------------------------- catalog
 const UNLOCK_LABEL = { B: 'B unlock', A: 'A unlock', S: 'S unlock' }
 
-function CatalogSheet({ kind, brief, ctx, result, showAll, setShowAll, onPick, onClose, say }) {
+function CatalogSheet({ kind, brief, levels, ctx, result, showAll, setShowAll, onPick, onClose, say }) {
   const title = { room: 'Rooms', furnish: 'Furniture & equipment', decor: 'Decor & landscape', light: 'Ceiling lighting' }[kind]
   const program = [...new Set(brief.rooms.map(r => r.type))]
   let sections
@@ -589,7 +592,7 @@ function CatalogSheet({ kind, brief, ctx, result, showAll, setShowAll, onPick, o
       .map(([name, ids]) => [name, ids.map(id => ({ id, room: true }))])
   } else {
     const pool = Object.keys(ITEMS).filter(id => kind === 'furnish' ? !isDecorLayer(id) : kind === 'light' ? ITEMS[id].ceiling : isDecorLayer(id) && !ITEMS[id].ceiling)
-    const shown = pool.filter(id => showAll || relevantItem(id, brief, levelsFor(offer)))
+    const shown = pool.filter(id => showAll || relevantItem(id, brief, levels))
     const required = shown.filter(id => brief.items.some(r => r.type === id || (r.family && familyOf(id) === r.family)))
     const rest = shown.filter(id => !required.includes(id))
     const groups = {}

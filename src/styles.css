@@ -1263,3 +1263,5 @@ button.sbar svg { transition: transform .3s cubic-bezier(.2,.8,.2,1); opacity: .
 .os-program.wishes li::marker { content: '★ '; color: var(--warn); }
 .room-bubble.docked { transform: translate(-50%, -100%); }
 .room-bubble.docked::after { display: none; }
+.crash { min-height: 100dvh; display: grid; place-content: center; gap: 14px; padding: 24px; text-align: center; background: var(--bg, #efefec); color: var(--text, #111); }
+.crash pre { max-width: 90vw; white-space: pre-wrap; font-size: 11px; opacity: .55; }

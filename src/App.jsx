@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import Editor from './ui/Editor.jsx'
 import { CareerEnd, Home, Hub, Legacy, NewCareer, Review, Shop, Unlocks, WorkModal } from './ui/screens.jsx'
 import { feedback } from './ui/fx.js'
@@ -18,15 +18,25 @@ function load() {
   return { meta: newMeta(), career: null }
 }
 
-function persist(save) {
+// Writes the save. If storage is full, sheds the bulkiest, least important data step by step
+// (old legacy thumbnails, then all legacy thumbnails, then older portfolio thumbnails and plans)
+// until it fits. Returns false only if even the slimmest save can't be written.
+const SHED = [
+  (d) => ({ ...d, meta: { ...d.meta, legacy: d.meta.legacy.map((l, i) => i < 5 ? l : { ...l, works: l.works.map(w => ({ ...w, thumb: null })), best: null }) } }),
+  (d) => ({ ...d, meta: { ...d.meta, legacy: d.meta.legacy.map(l => ({ ...l, works: l.works.map(w => ({ ...w, thumb: null })), best: null })) } }),
+  (d) => d.career ? { ...d, career: { ...d.career, portfolio: d.career.portfolio.map((p, i, a) => i >= a.length - 3 ? p : { ...p, thumb: null, project: null, review: null }) } } : d,
+  (d) => d.career ? { ...d, career: { ...d.career, portfolio: d.career.portfolio.map(p => ({ ...p, thumb: null, review: p.review && { head: p.review.head } })) } } : d,
+  (d) => ({ ...d, meta: { ...d.meta, legacy: d.meta.legacy.slice(0, 10) } }),
+]
+export function persist(save) {
   let data = save
-  for (let attempt = 0; attempt < 4; attempt++) {
-    try { localStorage.setItem(KEY, JSON.stringify(data)); return } catch {
-      // Out of space: drop thumbnails from the oldest legacy entries first.
-      const legacy = data.meta.legacy.map((l, i) => i >= data.meta.legacy.length - (attempt + 1) * 4 ? { ...l, works: l.works.map(w => ({ ...w, thumb: null })), best: null } : l)
-      data = { ...data, meta: { ...data.meta, legacy } }
+  for (let step = 0; step <= SHED.length; step++) {
+    try { localStorage.setItem(KEY, JSON.stringify(data)); return true } catch (e) {
+      if (step === SHED.length) { console.warn('Save failed', e); return false }
+      data = SHED[step](data)
     }
   }
+  return false
 }
 
 export default function App() {
@@ -59,7 +69,23 @@ export default function App() {
   }, [])
   const [work, setWork] = useState(null)
 
-  useEffect(() => { persist(save) }, [save])
+  // Storage writes are batched (a burst of edits = one write) and flushed immediately when the
+  // app is hidden, closed or switched away from, so the latest change is always on disk.
+  const saveRef = useRef(save)
+  saveRef.current = save
+  const dirty = useRef(false)
+  useEffect(() => {
+    dirty.current = true
+    const t = setTimeout(() => { persist(saveRef.current); dirty.current = false }, 250)
+    return () => clearTimeout(t)
+  }, [save])
+  useEffect(() => {
+    const flush = () => { if (dirty.current) { persist(saveRef.current); dirty.current = false } }
+    const onVis = () => { if (document.visibilityState === 'hidden') flush() }
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', onVis)
+    return () => { window.removeEventListener('pagehide', flush); document.removeEventListener('visibilitychange', onVis); flush() }
+  }, [])
   const update = (patch) => setSave(s => ({ ...s, ...patch }))
 
   const startCareer = ({ name, profile }) => {
@@ -75,7 +101,13 @@ export default function App() {
     setScreen('editor')
   }
 
-  const saveProject = (project) => setSave(s => s.career?.current ? { ...s, career: { ...s.career, current: { ...s.career.current, project } } } : s)
+  const saveProject = (project) => {
+    const s = saveRef.current
+    if (!s.career?.current || s.career.current.project === project) return
+    const next = { ...s, career: { ...s.career, current: { ...s.career.current, project } } }
+    saveRef.current = next // visible to a flush in this same tick (e.g. the app being closed)
+    setSave(next)
+  }
 
   const submit = (project) => {
     const { offer } = career.current
@@ -98,10 +130,12 @@ export default function App() {
     setScreen('legacy')
   }
 
-  const ctx = makeCtx(meta, career)
+  // Stable between edits, so the editor doesn't re-score on every save.
+  const ctx = useMemo(() => makeCtx(meta, career), [meta.unlocked, career?.packs, career?.profile]) // eslint-disable-line
+  const kit = useMemo(() => perks(career), [career?.packs, career?.profile]) // eslint-disable-line
 
   if (screen === 'editor' && career?.current) {
-    return <Editor key={career.current.offer.id + (career.current.attempts || 0)} offer={career.current.offer} kit={perks(career)} ctx={ctx} project={career.current.project}
+    return <Editor key={career.current.offer.id + (career.current.attempts || 0)} offer={career.current.offer} kit={kit} ctx={ctx} project={career.current.project}
       onChange={saveProject} onSubmit={submit} onExit={() => setScreen('hub')} />
   }
   if (screen === 'review' && career?.pending) {
