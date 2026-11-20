@@ -1294,3 +1294,10 @@ button.sbar svg { transition: transform .3s cubic-bezier(.2,.8,.2,1); opacity: .
 .file-btn { position: relative; overflow: hidden; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .backup-row .row { gap: 8px; }
+.versions { margin-top: 8px; font-size: 13px; }
+.versions summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.versions ul { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 6px; max-height: 240px; overflow: auto; }
+.versions li { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.versions li span { display: grid; }
+.versions li small { opacity: .65; }
+.saved-at { color: #3a8a5c; }

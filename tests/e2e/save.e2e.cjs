@@ -143,6 +143,59 @@ async function seed() {
       check('older saves (no stamps) load and keep saving', (await stored(p)).n === before - 1)
       await ctx.close()
     }
+    // 9. Browser storage loses its last writes (e.g. Safari's tab crashes before flushing to disk):
+    //    the database copy is newer and wins on the next load.
+    {
+      const ctx = await fresh(); const p = await ctx.newPage(); watch(p); await open(p)
+      const old = await p.evaluate(() => localStorage.getItem('built-save-v2'))
+      await delOne(p); await delOne(p); await p.waitForTimeout(500)
+      const latest = (await stored(p)).n
+      await p.evaluate(o => localStorage.setItem('built-save-v2', o), old) // roll browser storage back
+      await p.reload(); await p.waitForTimeout(900)
+      const n = (await stored(p)).n
+      const msg = await p.locator('.save-banner').textContent().catch(() => '')
+      check('progress lost by browser storage is recovered from the database copy', n === latest, `latest ${latest}, after reload ${n} · ${msg.slice(0, 60)}`)
+      await ctx.close()
+    }
+    // 10. An unreadable save is set aside, never overwritten, and progress is recovered.
+    {
+      const ctx = await fresh(); const p = await ctx.newPage(); watch(p); await open(p)
+      await delOne(p); await p.waitForTimeout(500)
+      const latest = (await stored(p)).n
+      await p.evaluate(() => localStorage.setItem('built-save-v2', '{broken json'))
+      await p.reload(); await p.waitForTimeout(3500)
+      const kept = await p.evaluate(() => localStorage.getItem('built-save-v2-unreadable'))
+      const n = await p.evaluate(() => { try { return JSON.parse(localStorage.getItem('built-save-v2')).career.current.project.levels[0].items.length } catch { return -1 } })
+      const studio = await p.getByText('Continue designing').count()
+      check('an unreadable save is kept aside and progress recovered', kept === '{broken json' && n === latest && studio > 0, `aside ${!!kept}, items ${n}/${latest}, studio shown ${studio > 0}`)
+      await ctx.close()
+    }
+    // 11. Earlier versions can be restored from Settings.
+    {
+      const ctx = await fresh(); const p = await ctx.newPage(); watch(p); await open(p)
+      const first = (await stored(p)).n
+      await delOne(p); await p.waitForTimeout(400) // first save -> first history entry
+      const v1 = (await stored(p)).n
+      await p.evaluate(() => { const real = Date.now; Date.now = () => real() + 120000 }) // two minutes later
+      await delOne(p); await delOne(p); await p.waitForTimeout(400)
+      await p.locator('.ed-top .icon-btn, [aria-label="Back"]').first().click().catch(() => {}); await p.waitForTimeout(400)
+      await p.locator('[aria-label=Settings]').first().click(); await p.waitForTimeout(600)
+      const count = await p.locator('.versions li').count()
+      await p.locator('.versions summary').click()
+      p.once('dialog', d => d.accept())
+      await p.locator('.versions li').last().locator('button').click(); await p.waitForTimeout(800)
+      const n = (await stored(p)).n
+      check('an earlier version can be restored', count >= 2 && n === v1, `versions ${count}, restored ${n} (first save had ${v1}, start ${first})`)
+      await ctx.close()
+    }
+    // 12. The editor shows when it last saved.
+    {
+      const ctx = await fresh(); const p = await ctx.newPage(); watch(p); await open(p)
+      await delOne(p); await p.waitForTimeout(300)
+      const t = await p.locator('.saved-at').textContent().catch(() => '')
+      check('the editor shows the last save time', /SAVED \d/.test(t), t)
+      await ctx.close()
+    }
     check('no page errors in any scenario', errors.length === 0, errors.join(' | ').slice(0, 200))
   } finally {
     await browser.close(); server.kill()

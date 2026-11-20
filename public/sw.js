@@ -1,7 +1,7 @@
 // BUILT service worker: the game works offline after the first visit.
 // - The page itself: network first (so updates arrive), falling back to the cached copy.
 // - Hashed JS/CSS bundles, art, icons and fonts: cache first (they never change in place).
-const VERSION = 'built-v11'
+const VERSION = 'built-v12'
 const CORE = ['./', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png']
 
 self.addEventListener('install', (e) => {

@@ -24,11 +24,12 @@ export function readStored() {
   try {
     const raw = ls.getItem(KEY)
     if (!raw) return { save: null }
-    const save = JSON.parse(raw)
-    if (save?.meta?.version !== 2) return { save: null, error: 'The save is from an incompatible version.' }
+    let save
+    try { save = JSON.parse(raw) } catch (e) { return { save: null, raw, error: `The save could not be read (${e.message}). It was set aside, not deleted.` } }
+    if (save?.meta?.version !== 2) return { save: null, raw, error: 'The save is from an incompatible version. It was set aside, not deleted.' }
     return { save: withBackupProject(save) }
   } catch (e) {
-    return { save: null, error: `The save could not be read (${e.message}).` }
+    return { save: null, error: `Storage could not be read (${e.message}).` }
   }
 }
 
@@ -84,7 +85,7 @@ export function writeSave(save, base) {
   for (let step = 0; step <= SHED.length; step++) {
     try {
       setVerified(ls, KEY, JSON.stringify(data))
-      return { ok: true, stamp, shed: step > 0 }
+      return { ok: true, stamp, shed: step > 0, data: { ...save, ...stamp } }
     } catch (e) {
       lastErr = e
       if (step < SHED.length) data = SHED[step](data)
@@ -92,7 +93,7 @@ export function writeSave(save, base) {
   }
   const full = /quota|full|exceed/i.test(String(lastErr?.name) + String(lastErr?.message))
   return {
-    ok: false, projectOk,
+    ok: false, projectOk, stamp, data: { ...save, ...stamp }, full,
     error: full
       ? (projectOk ? 'Storage is full. Your current design is safe, but career progress could not be saved.' : 'Storage is full: nothing could be saved.')
       : `Saving failed (${lastErr?.message || 'unknown error'}).`,

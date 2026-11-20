@@ -65,7 +65,7 @@ function relevantItem(id, brief, lv = brief.levels) {
   return def.rooms.some(r => program.has(r) && !ROOMS[r].basic)
 }
 
-export default function Editor({ offer, kit, ctx, project: initial, onChange, onSubmit, onExit }) {
+export default function Editor({ offer, kit, ctx, project: initial, onChange, onSubmit, onExit, savedAt }) {
   const brief = BRIEFS[offer.briefId]
   const [project, setProject] = useState(initial)
   const [past, setPast] = useState([])
@@ -594,7 +594,7 @@ export default function Editor({ offer, kit, ctx, project: initial, onChange, on
           <div className="title-block mono">
             <div><b>{brief.name.toUpperCase()}</b></div>
             <div>CLIENT {offer.client.toUpperCase()} · LEVEL {brief.level}/10</div>
-            <div>FLOOR {li + 1}/{project.levels.length} · SCALE 1:100 · {result.stats.area} m² GFA</div>
+            <div>FLOOR {li + 1}/{project.levels.length} · SCALE 1:100 · {result.stats.area} m² GFA{savedAt ? <span className="saved-at"> · SAVED {new Date(savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span> : null}</div>
           </div>
         )}
 

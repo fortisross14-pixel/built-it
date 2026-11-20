@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { feedback, onSettings, setSetting, settings as fxSettings } from './fx.js'
 import { canPrompt, isIOS, isStandalone, onInstallChange, promptInstall } from './install.js'
+import { listHistory } from '../saveDb.js'
 import Icon from './icons.jsx'
 import View3D from './View3D.jsx'
 import { ItemSymbol } from './PlanView.jsx'
@@ -56,6 +57,8 @@ export function SettingsButton() {
   const [, bump] = useState(0)
   useEffect(() => onInstallChange(() => bump(n => n + 1)), [])
   const [iosHelp, setIosHelp] = useState(false)
+  const [versions, setVersions] = useState([])
+  useEffect(() => { if (open) listHistory().then(setVersions).catch(() => setVersions([])) }, [open])
   const installed = isStandalone()
   const rows = [
     ['sound', 'Sound', 'Clicks, stamps and fanfares'],
@@ -98,6 +101,17 @@ export function SettingsButton() {
                   }} />
                 </label>
               </div>
+              {versions.length > 0 && (
+                <details className="versions">
+                  <summary>Earlier versions ({versions.length})</summary>
+                  <ul>{versions.slice(0, 12).map(v => (
+                    <li key={v.savedAt}>
+                      <span><b>{new Date(v.savedAt).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</b><small>{v.label}</small></span>
+                      <button className="ghost small" onClick={() => { if (window.confirm('Go back to this version? Your current progress is replaced (it stays in this list).')) { window.dispatchEvent(new CustomEvent('built:restore-version', { detail: v.savedAt })); setOpen(false) } }}>Restore</button>
+                    </li>
+                  ))}</ul>
+                </details>
+              )}
               <p className="dim small">Each copy of the game keeps its own save: an installed app and the browser on iPhone don't share progress. Use a backup to move between them.</p>
             </div>
             <div className="row end"><button className="primary" onClick={() => setOpen(false)} autoFocus>Done</button></div>

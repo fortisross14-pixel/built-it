@@ -8,10 +8,16 @@ import { abandonCareer, acceptOffer, acknowledge, archiveCareer, buyPack, comple
 import { critique, evaluate } from './engine/score.js'
 import { newProject } from './engine/plan.js'
 import { KEY, exportSave, isNewer, parseImport, readStored, requestPersistence, stampOf, writeSave } from './save.js'
+import { addHistory, getHistory, mirrorSave, readMirror, stashUnreadable } from './saveDb.js'
 import SaveBanner from './ui/SaveBanner.jsx'
 
 function initialSave() {
   const r = readStored()
+  if (r.raw) {
+    // Never write over a save we couldn't read: keep it aside (both stores) first.
+    try { localStorage.setItem(`${KEY}-unreadable`, r.raw) } catch { /* full */ }
+    stashUnreadable(r.raw).catch(() => {})
+  }
   return { save: r.save || { meta: newMeta(), career: null }, error: r.error || null }
 }
 
@@ -21,6 +27,7 @@ export default function App() {
   const { meta, career } = save
   const [saveStatus, setSaveStatus] = useState(boot.error ? { kind: 'error', text: boot.error } : null)
   const [syncKey, setSyncKey] = useState(0) // remounts the editor when a newer save is loaded
+  const [savedAt, setSavedAt] = useState(boot.save.savedAt || null)
   const [screen, setScreenState] = useState(() => (save.career ? (save.career.pending ? 'review' : save.career.status !== 'active' ? 'end' : 'hub') : 'home'))
   const screenRef = useRef(screen)
   screenRef.current = screen
@@ -58,6 +65,7 @@ export default function App() {
   const dirty = useRef(false)
   const adopting = useRef(false)
   const adopt = (stored, why) => {
+    const hadCareer = !!saveRef.current?.career
     base.current = stampOf(stored)
     saveRef.current = stored
     dirty.current = false
@@ -65,17 +73,34 @@ export default function App() {
     setSave(stored)
     setSyncKey(k => k + 1)
     if (stored.career?.pending) setScreenState('review')
+    else if (stored.career && screenRef.current === 'home' && !hadCareer) setScreenState(stored.career.status === 'active' ? 'hub' : 'end')
     else if (!stored.career && ['editor', 'hub', 'shop'].includes(screenRef.current)) setScreenState('home')
     if (why) setSaveStatus({ kind: 'info', text: why })
   }
-  const writeNow = () => {
+  const ready = useRef(false) // writes wait until the database copy has been checked at start-up
+  const writeNow = (closing = false) => {
     if (!dirty.current) return
+    if (!ready.current && !closing) return
+    const early = !ready.current // closing before the start-up check finished: browser storage only
     dirty.current = false
     const r = writeSave(saveRef.current, base.current)
     if (r.ok) {
       base.current = r.stamp
+      setSavedAt(r.stamp.savedAt)
+      if (!early) {
+        mirrorSave(r.data).catch(() => {}) // second copy in the database
+        addHistory(r.data).catch(() => {})
+      }
       setSaveStatus(st => r.shed ? { kind: 'warn', text: 'Storage was nearly full, so older thumbnails and plans were removed to keep saving. Download a backup in Settings to be safe.' }
         : st?.kind === 'error' ? { kind: 'ok', text: 'Saving works again.' } : st)
+    } else if (r.data && !early) {
+      // Browser storage refused the write: keep it in the database copy instead, and say so.
+      base.current = r.stamp
+      dirty.current = true
+      mirrorSave(r.data).then(() => {
+        setSavedAt(r.stamp.savedAt)
+        setSaveStatus({ kind: 'error', text: `${r.error} Your progress is safe in the backup store for now. Tap Retry, or download a backup.` })
+      }).catch(() => setSaveStatus({ kind: 'error', text: r.error }))
     } else if (r.conflict) {
       adopt(r.conflict, 'Built it! is open in another tab or window. Loaded the newest progress from there: keep playing in just one.')
     } else {
@@ -95,12 +120,33 @@ export default function App() {
     if (adopting.current) { adopting.current = false; return }
     if (save === boot.save) return // nothing changed since loading
     dirty.current = true
-    const t = setTimeout(() => writeRef.current(), 200)
-    return () => clearTimeout(t)
+    writeRef.current() // written immediately: nothing waits for a timer
   }, [save]) // eslint-disable-line
   useEffect(() => {
+    // At start-up the database copy may be newer than browser storage (which can lose its last
+    // writes if the tab crashes). Until this check is done, nothing is written.
+    const recover = (m) => {
+      // a newer database copy wins, unless the player has already edited since (then theirs stands)
+      if (m?.meta?.version === 2 && isNewer(stampOf(m), base.current) && !dirty.current) {
+        adopt(m, 'Recovered your latest progress from the backup store.')
+        try { const w = writeSave(m, stampOf(m)); if (w.ok) base.current = w.stamp } catch { /* retried on the next change */ }
+      }
+    }
+    const open = () => { if (ready.current) return; ready.current = true; writeRef.current() /* anything edited meanwhile */ }
+    readMirror().then(m => { recover(m); open() }, open)
+    setTimeout(open, 3000) // never hold writes longer than this; a late database copy can still be recovered
+    const onVersion = async (e) => {
+      const v = await getHistory(e.detail).catch(() => null)
+      if (!v) return setSaveStatus({ kind: 'error', text: 'That version could not be found.' })
+      const w = writeSave(v, { savedAt: Date.now() + 1e9, rev: 1e9 })
+      if (w.stamp) base.current = w.stamp
+      adopt({ ...v, ...(w.stamp || {}) }, 'Earlier version restored.')
+      if (w.data) mirrorSave(w.data).catch(() => {})
+      setScreenState('home')
+    }
+    window.addEventListener('built:restore-version', onVersion)
     requestPersistence()
-    const flush = () => writeRef.current()
+    const flush = () => writeRef.current(true)
     const onVis = () => { if (document.visibilityState === 'hidden') flush(); else checkRef.current('Loaded your latest progress from another tab or window.') }
     const onStorage = (e) => { if (e.key === KEY || e.key === null) checkRef.current('Updated with progress saved in another tab or window.') }
     const onFocus = () => checkRef.current('Loaded your latest progress from another tab or window.')
@@ -132,7 +178,7 @@ export default function App() {
     return () => {
       window.removeEventListener('pagehide', flush); window.removeEventListener('storage', onStorage); window.removeEventListener('focus', onFocus)
       document.removeEventListener('visibilitychange', onVis)
-      window.removeEventListener('built:export', onExport); window.removeEventListener('built:import', onImport)
+      window.removeEventListener('built:export', onExport); window.removeEventListener('built:import', onImport); window.removeEventListener('built:restore-version', onVersion)
       flush()
     }
   }, []) // eslint-disable-line
@@ -187,7 +233,7 @@ export default function App() {
   const view = (() => {
   if (screen === 'editor' && career?.current) {
       return <Editor key={career.current.offer.id + (career.current.attempts || 0) + ':' + syncKey} offer={career.current.offer} kit={kit} ctx={ctx} project={career.current.project}
-        onChange={saveProject} onSubmit={submit} onExit={() => setScreen('hub')} />
+        onChange={saveProject} savedAt={savedAt} onSubmit={submit} onExit={() => setScreen('hub')} />
     }
     if (screen === 'review' && career?.pending) {
       return <Review entry={career.pending} career={career}

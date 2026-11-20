@@ -75,6 +75,10 @@ Project icons load from `public/art/projects/<id>.jpg`. See `ART_PROMPTS.md` for
 ## Saving
 - **Every change is saved straight away.** The save is written within a fraction of a second, and immediately when you switch away from the app or close it.
 - **Two copies are kept in sync.** The game may be open in two places, for example the installed app and a browser tab on Android, or two tabs. Each save carries a revision stamp, and a copy never overwrites newer progress. When a copy comes back to the front, or another copy saves, it loads the newest save and says so.
+- **Two stores.** Every save goes to browser storage and to a second copy in the browser's database (IndexedDB). On start-up the newest of the two wins, so a tab that crashes before the browser finished writing doesn't lose your last moves. Nothing is written until that check is done.
+- **A save that can't be read is never overwritten.** It's set aside first.
+- **Earlier versions.** Settings keeps the last 20 versions, at most one a minute, and can restore any of them.
+- **The editor shows when it last saved,** for example "SAVED 14:03:22".
 - **The design in progress has its own copy,** so a full storage can't cost you the level you're working on. If storage fills up, older thumbnails and plans are dropped first.
 - **Failures are never silent.** A **Saving failed** banner shows with **Retry** and **Download backup**.
 - **Settings → Backup** downloads your save as a file and restores it. On iPhone, the installed app and Safari keep separate saves, so use a backup to move between them.
