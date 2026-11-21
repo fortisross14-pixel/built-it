@@ -242,7 +242,7 @@ export function evaluate(project, offer, kit = []) {
   }))
   const lighting = totalArea ? litArea / totalArea : 0
   checklist.push({ label: 'Ceiling lighting', ok: lighting >= 0.9, detail: `${Math.round(lighting * 100)}% lit`, kind: 'light' })
-  note('functionality', 'Lighting', lighting, 'Every room is properly lit after dark.', 'Rooms are dark after sunset: add ceiling lights in Decorate 3D.')
+  note('requirements', 'Lighting', lighting, 'Every room is properly lit after dark.', 'Rooms are dark after sunset: add ceiling lights in Decorate 3D.')
 
   const equipQ = useful.length ? avg(useful.map(it => q(it.q).score)) : 0
   note('functionality', 'Equipment quality', equipQ, 'Quality furniture and equipment that will last.', 'Cheap equipment: staff are already complaining.')
@@ -284,15 +284,24 @@ export function evaluate(project, offer, kit = []) {
     checklist.push({ label: 'Merchandising', ok: merchScore >= 0.75, detail: `${Math.round(merchScore * 100)}%`, kind: 'merch' })
   }
   const checksW = keyChecks.length ? 0.2 : 0
-  let functionality = 100 * (0.25 * reach + 0.17 * access + 0.12 * distScore + (brief.adj.length ? 0.18 : 0) * adj + 0.05 * crowd + 0.05 * wet + 0.05 * lift + 0.07 * lighting + 0.06 * equipQ + merchW * merchScore + checksW * checkScore + 0.06 * placement)
-  functionality /= (brief.adj.length ? 1 : 0.82) + merchW + checksW + 0.06
+  let functionality = 100 * (0.25 * reach + 0.17 * access + 0.12 * distScore + (brief.adj.length ? 0.18 : 0) * adj + 0.05 * crowd + 0.05 * wet + 0.05 * lift + 0.06 * equipQ + merchW * merchScore + checksW * checkScore + 0.06 * placement)
+  functionality /= (brief.adj.length ? 0.93 : 0.75) + merchW + checksW + 0.06
   // A correct layout earns up to 82. The last 18 are excellence: expert touches for this building type.
   const exc = excellenceFor(offer.briefId).map(e => measureExcellence(project, e, { items, keyChecks, industry: brief.industry }))
-  const excScore = exc.length ? avg(exc.map(e => e.value)) : 0
+  // Signature features for this building type (booths, gendered restrooms, premium seating and
+  // finishes) are nice-to-haves too: not in the brief, revealed at the review.
+  const feats = featuresFor(offer.briefId).map(f => measureFeature(project, f))
+  for (const f of feats) checklist.push({ label: f.label + (f.bonus ? ' (bonus)' : ''), ok: f.value >= 0.99, value: f.value, detail: f.detail, kind: 'feature' })
+  const reqFeats = feats.filter(f => !f.bonus)
+  const featBonus = Math.min(6, feats.filter(f => f.bonus && f.value >= 0.99).length * 3)
+  const excW = exc.length + reqFeats.reduce((s, f) => s + f.w, 0)
+  const excScore = excW ? (exc.reduce((s, e) => s + e.value, 0) + reqFeats.reduce((s, f) => s + f.value * f.w, 0)) / excW : 0
+  if (reqFeats.length) note('functionality', 'Signature features', avg(reqFeats.map(f => f.value)), 'Everything this kind of client hopes for is here.', 'Missing touches this kind of client hopes for.',
+    reqFeats.filter(f => f.value < 0.99).map(f => `${f.label}: ${f.detail}. ${f.why}`))
   for (const e of exc) checklist.push({ label: e.label, ok: e.value >= 0.99, value: e.value, detail: e.detail, kind: 'excel' })
   note('functionality', 'Excellence', excScore, 'Expert touches everywhere: this place runs beautifully.', 'It works, but an expert would do more.',
     exc.filter(e => e.value < 0.99).map(e => `${e.label}: ${e.detail}. ${e.why}`))
-  functionality = functionality * 0.82 + 18 * excScore
+  functionality = functionality * 0.82 + 18 * excScore + featBonus
   // Signature pieces: each distinct boosted item type adds once (unlocks are meant to feel good).
   const boostTypes = new Set(items.map(it => it.type).filter(t => ITEMS[t].boost))
   let boostF = [...boostTypes].reduce((s, t) => s + (ITEMS[t].boost.f || 0), 0)
@@ -377,22 +386,12 @@ export function evaluate(project, offer, kit = []) {
     extra.push(s)
     checklist.push({ label: 'Daylight in every lived-in room', ok: s === 1, detail: `${hab.filter(r => lit.has(r.id)).length}/${hab.length}` })
   }
-  // Signature features for this building type (booths, gendered restrooms, premium seating, finishes…).
-  const feats = featuresFor(offer.briefId).map(f => measureFeature(project, f))
-  for (const f of feats) checklist.push({ label: f.label + (f.bonus ? ' (bonus)' : ''), ok: f.value >= 0.99, value: f.value, detail: f.detail, kind: 'feature' })
-  const reqFeats = feats.filter(f => !f.bonus)
-  const featW = reqFeats.reduce((s, f) => s + f.w, 0)
-  const featScore = featW ? reqFeats.reduce((s, f) => s + f.value * f.w, 0) / featW : 1
-  const featBonus = Math.min(6, feats.filter(f => f.bonus && f.value >= 0.99).length * 3)
-  if (reqFeats.length) note('requirements', 'Signature features', featScore, 'Everything this kind of client expects is here.', 'Missing what this kind of client expects.',
-    reqFeats.filter(f => f.value < 0.99).map(f => `${f.label}: ${f.detail}. ${f.why}`))
   const roomMissing = checklist.filter(c => c.kind === 'room' && !c.ok).map(c => `${c.label} (${c.detail})`)
   const itemMissing = checklist.filter(c => c.kind === 'item' && !c.ok).map(c => `${c.label} (${c.detail})`)
   const rn = notes.find(n => n.label === 'Room program'); if (rn && rn.value < 0.75) rn.detail = roomMissing
   const iN = notes.find(n => n.label === 'Furniture & equipment'); if (iN && iN.value < 0.75) iN.detail = itemMissing
-  let requirements = 100 * (0.45 * roomScore + 0.4 * itemScore + 0.15 * levelsOk)
-  if (featW) requirements = requirements * 0.8 + 20 * featScore
-  requirements += featBonus
+  // Requirements = exactly what the brief lists: rooms, furniture, lighting, floors (+ wishes below).
+  let requirements = 100 * (0.4 * roomScore + 0.35 * itemScore + 0.1 * lighting + 0.15 * levelsOk)
   // Client wishes for this particular offer.
   const wishes = (offer.wishes || []).map(wishById).filter(Boolean).map(w => measureWish(project, w, { items, cost, offer, brief }))
   for (const w of wishes) checklist.push({ label: w.label, ok: w.value >= 0.99, value: w.value, detail: w.detail, kind: 'wish' })
@@ -657,8 +656,8 @@ export function breakdown(result, offer) {
   const c = result.cost
   const over = c.total - offer.budget
   return {
-    functionality: sort([...fromList(['check', 'excel', 'conflict', 'adj', 'merch', 'light', 'building']), ...fromNotes('functionality')]),
-    requirements: sort([...fromList(['room', 'item', 'feature', 'wish']), ...fromNotes('requirements')]),
+    functionality: sort([...fromList(['check', 'excel', 'feature', 'conflict', 'adj', 'merch', 'building']), ...fromNotes('functionality')]),
+    requirements: sort([...fromList(['room', 'item', 'light', 'wish']), ...fromNotes('requirements')]),
     aesthetics: sort(fromNotes('aesthetics')),
     budget: [
       { label: over > 0 ? 'Over budget' : 'Within budget', value: over > 0 ? Math.max(0, 1 - over / offer.budget * 3) : 1, text: `${Math.round(c.total / 1000)}k spent of ${Math.round(offer.budget / 1000)}k`, detail: [] },

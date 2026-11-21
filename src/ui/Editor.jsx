@@ -830,7 +830,8 @@ function ItemInspector({ item, problem, onQuality, onRotate, onDelete, onClose, 
 }
 
 const GENDERED = ['wc', 'fitting', 'changing']
-const isAsked = (c) => !c.kind || ['wish', 'room', 'item', 'budget'].includes(c.kind)
+// The brief = requirements only: rooms, furniture, lighting, floors, budget and the client's wishes.
+const isAsked = (c) => !c.kind || ['wish', 'room', 'item', 'light', 'budget'].includes(c.kind)
 
 function BriefPanel({ offer, brief, result, twist, kit, onClose }) {
   const lv = levelsFor(offer)
@@ -839,6 +840,7 @@ function BriefPanel({ offer, brief, result, twist, kit, onClose }) {
     ['Client wishes', result.checklist.filter(c => c.kind === 'wish')],
     ['Rooms', result.checklist.filter(c => c.kind === 'room')],
     ['Equipment', result.checklist.filter(c => c.kind === 'item')],
+    ['Lighting', result.checklist.filter(c => c.kind === 'light')],
     ['Building', result.checklist.filter(c => !c.kind || c.kind === 'budget')],
   ]
   return (
@@ -878,7 +880,7 @@ function BriefPanel({ offer, brief, result, twist, kit, onClose }) {
           </ul>
         </div>
       ))}
-      <p className="dim small">This is what the client asked for. How well it works and looks (layout, routes, expert touches, finishes) is judged at the review.</p>
+      <p className="dim small">This is what the client asked for. How well it works and looks (spacing, distances, premium touches, finishes) is judged at the review, which tells you what was good and what was missing.</p>
       <p className="dim small">A correct layout earns about 80 per rating; the rest comes from expert touches, curated finishes and spending well under budget. <b>S</b> needs 90+ overall and every rating at 85+.</p>
       <p className="dim small">Graded <b>F · C · B · A · S</b> on the average of Functionality, Requirements, Aesthetics and Budget. F fails. B, A and S unlock better {INDUSTRIES[brief.industry].label.toLowerCase()} pieces for every future architect.</p>
     </div>

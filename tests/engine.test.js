@@ -478,3 +478,15 @@ test('rooms: swap two rooms by moving one onto the other; it floats red, then la
   assert.equal(L.items.find(i => i.type === 'oven').x, 5)
   assert.equal(L.doors.length, 1, 'no door is lost on the way')
 })
+
+test('requirements = the brief list only; nice-to-haves count toward Functionality', () => {
+  const offer = cafeOffer()
+  const r = evaluate(referenceCafe(offer), offer)
+  const brief = r.checklist.filter(c => !c.kind || ['wish', 'room', 'item', 'light', 'budget'].includes(c.kind))
+  assert.ok(brief.every(c => c.ok), 'the reference café meets every listed requirement')
+  assert.ok(r.checklist.some(c => c.kind === 'feature' && !c.ok), 'it misses some nice-to-haves (no booths / premium seating)')
+  assert.equal(r.requirements, 100, 'so Requirements is full')
+  // Lighting is a listed requirement: removing the lights lowers Requirements
+  const dark = referenceCafe(offer); dark.levels[0].items = dark.levels[0].items.filter(i => !['pendant', 'downlight', 'track', 'panel'].includes(i.type))
+  assert.ok(evaluate(dark, offer).requirements < 95)
+})
